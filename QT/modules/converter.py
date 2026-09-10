@@ -6,7 +6,11 @@
 import importlib.util
 from pathlib import Path
 
+from PIL import Image, ImageOps
+
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
+
+from modules._preview import PreviewBrowser, make_thumb_rgb
 
 # 项目根/tools：QT/modules/converter.py -> parents[2] 即项目根目录
 TOOLS_DIR = Path(__file__).resolve().parents[2] / "tools"
@@ -25,6 +29,7 @@ class ConverterWorker(QtCore.QThread):
     """后台执行图片转换，避免阻塞界面。"""
 
     log = Signal(str)
+    previews = Signal(object, object)  # (缩略图列表, 文件名列表)
     finished = Signal(int, int)  # (成功数, 失败数)
 
     def __init__(self, mode, input_path, output_dir, quality, replace_original, parent=None):
@@ -83,6 +88,8 @@ class ConverterWorker(QtCore.QThread):
         output_root.mkdir(parents=True, exist_ok=True)
 
         ok = fail = 0
+        thumbs = []
+        thumb_labels = []
         for src in files:
             rel = src.name if input_is_file else src.relative_to(base_dir)
             dst = output_root / Path(rel).with_suffix(".jpg")
@@ -93,6 +100,15 @@ class ConverterWorker(QtCore.QThread):
 
             if convert(src, dst, self.quality):
                 ok += 1
+                try:
+                    with Image.open(src) as im:
+                        orig_thumb = make_thumb_rgb(ImageOps.exif_transpose(im))
+                    with Image.open(dst) as im:
+                        result_thumb = make_thumb_rgb(im)
+                    thumbs.append((orig_thumb, result_thumb))
+                    thumb_labels.append(src.name)
+                except Exception as exc:  # noqa: BLE001
+                    self.log.emit(f"缩略图生成失败：{src}（{exc}）")
                 if self.replace_original:
                     try:
                         src.unlink()
@@ -104,6 +120,9 @@ class ConverterWorker(QtCore.QThread):
             else:
                 fail += 1
                 self.log.emit(f"[失败] {src}")
+
+        if thumbs:
+            self.previews.emit(thumbs, thumb_labels)
 
         self.log.emit(f"\n完成：成功 {ok} 张，失败 {fail} 张。")
         self.finished.emit(ok, fail)
@@ -169,6 +188,10 @@ class ConverterModule(QtWidgets.QWidget):
         option_layout.addWidget(self.quality_spin)
         layout.addLayout(option_layout)
 
+        # 翻页预览（原图 / 结果）
+        self.browser = PreviewBrowser(dual=True)
+        layout.addWidget(self.browser)
+
         # 开始按钮
         self.start_btn = QtWidgets.QPushButton("开始转换")
         self.start_btn.setMinimumHeight(36)
@@ -224,6 +247,7 @@ class ConverterModule(QtWidgets.QWidget):
 
         self.log_view.clear()
         self.log_view.appendPlainText("开始转换...")
+        self.browser.clear()
         self.start_btn.setEnabled(False)
 
         self._worker = ConverterWorker(
@@ -234,11 +258,15 @@ class ConverterModule(QtWidgets.QWidget):
             replace_original=replace,
         )
         self._worker.log.connect(self._append_log)
+        self._worker.previews.connect(self._on_previews)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
 
     def _append_log(self, text):
         self.log_view.appendPlainText(text)
+
+    def _on_previews(self, items, labels):
+        self.browser.set_data(items, labels)
 
     def _on_finished(self, ok, fail):
         self.start_btn.setEnabled(True)

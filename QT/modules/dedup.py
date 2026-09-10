@@ -13,6 +13,8 @@ from PIL import Image, ImageOps
 
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
+from modules._preview import PreviewBrowser, make_thumb_rgb
+
 SUPPORTED_EXTS = {
     ".JPG", ".JPEG", ".PNG", ".BMP", ".WEBP", ".TIF", ".TIFF",
 }
@@ -38,6 +40,7 @@ class DedupWorker(QtCore.QThread):
     """后台执行图片去重，避免阻塞界面。"""
 
     log = Signal(str)
+    previews = Signal(object, object)  # (缩略图列表, 说明列表)
     finished = Signal(int)  # 发现的重复图片数
 
     def __init__(self, input_path, threshold, action, parent=None):
@@ -88,11 +91,22 @@ class DedupWorker(QtCore.QThread):
 
         dup_dir = src / "_duplicates"
         dup_count = 0
+        thumbs = []
+        thumb_labels = []
         for g in groups:
             if len(g) <= 1:
                 continue
             keep, dups = g[0], g[1:]
             self.log.emit(f"[重复组] 保留：{keep.name}，重复 {len(dups)} 张")
+            try:
+                with Image.open(keep) as im:
+                    keep_thumb = make_thumb_rgb(ImageOps.exif_transpose(im))
+                with Image.open(dups[0]) as im:
+                    dup_thumb = make_thumb_rgb(ImageOps.exif_transpose(im))
+                thumbs.append((keep_thumb, dup_thumb))
+                thumb_labels.append(f"保留 {keep.name}  ←  重复 {dups[0].name}（共 {len(dups)} 张）")
+            except Exception as exc:  # noqa: BLE001
+                self.log.emit(f"缩略图生成失败：{keep.name}（{exc}）")
             for d in dups:
                 dup_count += 1
                 if self.action == "report":
@@ -111,6 +125,9 @@ class DedupWorker(QtCore.QThread):
                         self.log.emit(f"    [已移动] {d} -> {dst}")
                     except OSError as exc:
                         self.log.emit(f"    [移动失败] {d}：{exc}")
+
+        if thumbs:
+            self.previews.emit(thumbs, thumb_labels)
 
         self.log.emit(f"\n完成：共 {len(files)} 张，发现重复 {dup_count} 张。")
         self.finished.emit(dup_count)
@@ -161,6 +178,10 @@ class DedupModule(QtWidgets.QWidget):
         opt_row.addWidget(self.action_combo)
         layout.addLayout(opt_row)
 
+        # 翻页预览（保留图 / 重复图）
+        self.browser = PreviewBrowser(dual=True)
+        layout.addWidget(self.browser)
+
         # 开始按钮
         self.start_btn = QtWidgets.QPushButton("开始扫描")
         self.start_btn.setMinimumHeight(36)
@@ -200,6 +221,7 @@ class DedupModule(QtWidgets.QWidget):
 
         self.log_view.clear()
         self.log_view.appendPlainText("开始扫描...")
+        self.browser.clear()
         self.start_btn.setEnabled(False)
 
         self._worker = DedupWorker(
@@ -208,11 +230,15 @@ class DedupModule(QtWidgets.QWidget):
             action=action,
         )
         self._worker.log.connect(self._append_log)
+        self._worker.previews.connect(self._on_previews)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
 
     def _append_log(self, text):
         self.log_view.appendPlainText(text)
+
+    def _on_previews(self, items, labels):
+        self.browser.set_data(items, labels)
 
     def _on_finished(self, dup_count):
         self.start_btn.setEnabled(True)

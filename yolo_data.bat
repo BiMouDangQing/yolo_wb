@@ -2,9 +2,9 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 
-REM 优先使用 diulian 环境自带的 Python / pythonw，找不到则回退到系统
-set "PY=D:\anaconda\envs\diulian\python.exe"
-set "PYW=D:\anaconda\envs\diulian\pythonw.exe"
+REM 优先使用 yolo_data 环境自带的 Python / pythonw，找不到则回退到系统
+set "PY=D:\anaconda\envs\yolo_data\python.exe"
+set "PYW=D:\anaconda\envs\yolo_data\pythonw.exe"
 if not exist "%PY%" set "PY=python"
 if not exist "%PYW%" set "PYW=pythonw"
 

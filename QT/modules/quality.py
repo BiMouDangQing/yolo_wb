@@ -15,6 +15,8 @@ import numpy as np
 
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
+from modules._preview import PreviewBrowser, make_thumb_bgr
+
 SUPPORTED_EXTS = {
     ".JPG", ".JPEG", ".PNG", ".BMP", ".WEBP", ".TIF", ".TIFF",
 }
@@ -50,6 +52,7 @@ class QualityWorker(QtCore.QThread):
     """后台执行废图筛选，避免阻塞界面。"""
 
     log = Signal(str)
+    previews = Signal(object, object)  # (缩略图列表, 说明列表)
     finished = Signal(int)  # 发现的废图数
 
     def __init__(self, input_path, blur_th, dark_th, over_th, action, parent=None):
@@ -80,6 +83,8 @@ class QualityWorker(QtCore.QThread):
 
         bad_dir = src / "_bad"
         bad_count = 0
+        thumbs = []
+        thumb_labels = []
         for p in files:
             img = imread_unicode(p)
             if img is None:
@@ -94,6 +99,11 @@ class QualityWorker(QtCore.QThread):
                 continue
 
             bad_count += 1
+            try:
+                thumbs.append(make_thumb_bgr(img))
+                thumb_labels.append(f"{p.name}：{reason}")
+            except Exception as exc:  # noqa: BLE001
+                self.log.emit(f"缩略图生成失败：{p}（{exc}）")
             if self.action == "report":
                 self.log.emit(f"[废图] {p}：{reason}")
             elif self.action == "delete":
@@ -110,6 +120,9 @@ class QualityWorker(QtCore.QThread):
                     self.log.emit(f"[已移动] {p} -> {dst}：{reason}")
                 except OSError as exc:
                     self.log.emit(f"[移动失败] {p}：{exc}")
+
+        if thumbs:
+            self.previews.emit(thumbs, thumb_labels)
 
         self.log.emit(f"\n完成：共 {len(files)} 张，发现废图 {bad_count} 张。")
         self.finished.emit(bad_count)
@@ -178,6 +191,10 @@ class QualityModule(QtWidgets.QWidget):
         action_row.addStretch()
         layout.addLayout(action_row)
 
+        # 翻页预览（废图 + 原因）
+        self.browser = PreviewBrowser(dual=False)
+        layout.addWidget(self.browser)
+
         # 开始按钮
         self.start_btn = QtWidgets.QPushButton("开始筛选")
         self.start_btn.setMinimumHeight(36)
@@ -217,6 +234,7 @@ class QualityModule(QtWidgets.QWidget):
 
         self.log_view.clear()
         self.log_view.appendPlainText("开始筛选...")
+        self.browser.clear()
         self.start_btn.setEnabled(False)
 
         self._worker = QualityWorker(
@@ -227,11 +245,15 @@ class QualityModule(QtWidgets.QWidget):
             action=action,
         )
         self._worker.log.connect(self._append_log)
+        self._worker.previews.connect(self._on_previews)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
 
     def _append_log(self, text):
         self.log_view.appendPlainText(text)
+
+    def _on_previews(self, items, labels):
+        self.browser.set_data(items, labels)
 
     def _on_finished(self, bad_count):
         self.start_btn.setEnabled(True)

@@ -16,6 +16,8 @@ import numpy as np
 
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
+from modules._preview import PreviewBrowser, make_thumb_bgr
+
 # 可处理的图片格式（cv2 可解码的常见格式）
 SUPPORTED_EXTS = {
     ".JPG", ".JPEG", ".PNG", ".BMP", ".WEBP", ".TIF", ".TIFF",
@@ -44,14 +46,6 @@ def imwrite_unicode(path, img):
         return False
     buf.tofile(str(path))
     return True
-
-
-def _bgr_to_pixmap(img_bgr):
-    """把 BGR numpy 数组转成 QPixmap。"""
-    arr = np.ascontiguousarray(img_bgr[:, :, ::-1])  # BGR -> RGB
-    h, w, ch = arr.shape
-    qimg = QtGui.QImage(arr.data, w, h, ch * w, QtGui.QImage.Format_RGB888)
-    return QtGui.QPixmap.fromImage(qimg)
 
 
 def _gain_factors(img_bgr, method, manual_gains):
@@ -95,7 +89,7 @@ class WhiteBalanceWorker(QtCore.QThread):
     """后台执行白平衡处理，避免阻塞界面。"""
 
     log = Signal(str)
-    preview = Signal(object, object)  # (原图 QPixmap, 结果 QPixmap)
+    previews = Signal(object, object)  # (缩略图列表, 文件名列表)
     finished = Signal(int, int)       # (成功数, 失败数)
 
     def __init__(self, input_path, method, gains, output_dir,
@@ -144,7 +138,9 @@ class WhiteBalanceWorker(QtCore.QThread):
             output_root = None
 
         ok = fail = 0
-        for i, src in enumerate(files):
+        thumbs = []
+        thumb_labels = []
+        for src in files:
             img = imread_unicode(src)
             if img is None:
                 fail += 1
@@ -153,11 +149,11 @@ class WhiteBalanceWorker(QtCore.QThread):
 
             result = apply_white_balance(img, self.method, self.gains)
 
-            if i == 0:
-                try:
-                    self.preview.emit(_bgr_to_pixmap(img), _bgr_to_pixmap(result))
-                except Exception as exc:  # noqa: BLE001
-                    self.log.emit(f"预览生成失败：{exc}")
+            try:
+                thumbs.append((make_thumb_bgr(img), make_thumb_bgr(result)))
+                thumb_labels.append(src.name)
+            except Exception as exc:  # noqa: BLE001
+                self.log.emit(f"缩略图生成失败：{src}（{exc}）")
 
             if output_root is None:
                 ok += 1
@@ -166,8 +162,8 @@ class WhiteBalanceWorker(QtCore.QThread):
 
             rel = src.name if input_is_file else src.relative_to(base_dir)
             dst = output_root / rel
-            # 输出目录就是原目录且不替换原文件时，避免覆盖原图
-            if dst.resolve() == src.resolve():
+            # 未勾选“替换原文件”且输出目录就是原目录时，避免覆盖原图
+            if dst.resolve() == src.resolve() and not self.replace_original:
                 dst = output_root / (rel.stem + "_wb" + rel.suffix)
             dst.parent.mkdir(parents=True, exist_ok=True)
 
@@ -180,6 +176,9 @@ class WhiteBalanceWorker(QtCore.QThread):
             else:
                 fail += 1
                 self.log.emit(f"[失败] 保存失败：{src}")
+
+        if thumbs:
+            self.previews.emit(thumbs, thumb_labels)
 
         self.log.emit(f"\n完成：成功 {ok} 张，失败 {fail} 张。")
         self.finished.emit(ok, fail)
@@ -251,13 +250,9 @@ class WhiteBalanceModule(QtWidgets.QWidget):
         save_row.addWidget(self.output_btn)
         layout.addLayout(save_row)
 
-        # 预览（原图 / 结果）
-        preview_row = QtWidgets.QHBoxLayout()
-        self.original_label = self._make_preview_label("原图")
-        self.result_label = self._make_preview_label("结果")
-        preview_row.addWidget(self.original_label, 1)
-        preview_row.addWidget(self.result_label, 1)
-        layout.addLayout(preview_row, 1)
+        # 翻页预览（原图 / 结果）
+        self.browser = PreviewBrowser(dual=True)
+        layout.addWidget(self.browser, 1)
 
         # 开始按钮
         self.start_btn = QtWidgets.QPushButton("开始处理")
@@ -273,14 +268,6 @@ class WhiteBalanceModule(QtWidgets.QWidget):
         font.setStyleHint(QtGui.QFont.Monospace)
         self.log_view.setFont(font)
         layout.addWidget(self.log_view)
-
-    @staticmethod
-    def _make_preview_label(title):
-        label = QtWidgets.QLabel(title)
-        label.setAlignment(QtCore.Qt.AlignCenter)
-        label.setMinimumHeight(200)
-        label.setStyleSheet("background:#f0f0f0; border:1px solid #ccc;")
-        return label
 
     # ---------- 事件 ----------
     def _on_method_changed(self, _index):
@@ -330,6 +317,7 @@ class WhiteBalanceModule(QtWidgets.QWidget):
 
         self.log_view.clear()
         self.log_view.appendPlainText("开始处理...")
+        self.browser.clear()
         self.start_btn.setEnabled(False)
 
         # 手动增益按 BGR 顺序传给 worker
@@ -347,26 +335,15 @@ class WhiteBalanceModule(QtWidgets.QWidget):
             replace_original=replace,
         )
         self._worker.log.connect(self._append_log)
-        self._worker.preview.connect(self._show_preview)
+        self._worker.previews.connect(self._on_previews)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
 
     def _append_log(self, text):
         self.log_view.appendPlainText(text)
 
-    def _show_preview(self, original_pixmap, result_pixmap):
-        self._set_pixmap(self.original_label, original_pixmap)
-        self._set_pixmap(self.result_label, result_pixmap)
-
-    @staticmethod
-    def _set_pixmap(label, pixmap):
-        label.setText("")
-        scaled = pixmap.scaled(
-            label.size(),
-            QtCore.Qt.KeepAspectRatio,
-            QtCore.Qt.SmoothTransformation,
-        )
-        label.setPixmap(scaled)
+    def _on_previews(self, items, labels):
+        self.browser.set_data(items, labels)
 
     def _on_finished(self, ok, fail):
         self.start_btn.setEnabled(True)

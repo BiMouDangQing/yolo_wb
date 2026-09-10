@@ -1,6 +1,6 @@
 """一键启动前端界面。
 
-用法（在已激活 diulian 环境的终端中）：
+用法（在已激活 yolo_data 环境的终端中）：
     python run.py
 
 本脚本会把 QT 目录加入 sys.path，然后调用 QT/qt.py 里的 main() 启动界面。

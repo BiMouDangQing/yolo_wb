@@ -7,7 +7,12 @@ import importlib.util
 import shutil
 from pathlib import Path
 
+import cv2
+import numpy as np
+
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
+
+from modules._preview import PreviewBrowser, make_thumb_bgr
 
 # 项目根/tools：QT/modules/xml2yolo.py -> parents[2] 即项目根目录
 TOOLS_DIR = Path(__file__).resolve().parents[2] / "tools"
@@ -22,10 +27,25 @@ def _load_tools_module(name):
     return mod
 
 
+def imread_unicode(path):
+    """读取图片（支持中文等非 ASCII 路径）。"""
+    data = np.fromfile(str(path), dtype=np.uint8)
+    return cv2.imdecode(data, cv2.IMREAD_COLOR)
+
+
+def draw_boxes(img_bgr, boxes):
+    """在 BGR 图上画出标注框，用于验证转换。"""
+    out = img_bgr.copy()
+    for name, xmin, ymin, xmax, ymax in boxes:
+        cv2.rectangle(out, (int(xmin), int(ymin)), (int(xmax), int(ymax)), (0, 255, 0), 2)
+    return out
+
+
 class Xml2YoloWorker(QtCore.QThread):
     """后台执行 XML 转 YOLO 与无标注筛选。"""
 
     log = Signal(str)
+    previews = Signal(object, object)  # (缩略图列表, 文件名列表)
     finished = Signal(int, int, int)  # (转换数, 失败数, 无标注数)
 
     def __init__(self, images_dir, xml_dir, labels_dir, unlabeled_dir,
@@ -94,6 +114,8 @@ class Xml2YoloWorker(QtCore.QThread):
             labels_dir.mkdir(parents=True, exist_ok=True)
 
         ok = fail = 0
+        thumbs = []
+        thumb_labels = []
         annotated_stems = set()
         for xml_path, filename, width, height, boxes in records:
             annotated_stems.add(xml_path.stem)
@@ -126,6 +148,17 @@ class Xml2YoloWorker(QtCore.QThread):
             dst.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
             ok += 1
             self.log.emit(f"[成功] {xml_path.name} -> {dst.name}（{len(lines)} 个框）")
+
+            img_path = images.get(xml_path.stem)
+            if img_path:
+                try:
+                    img = imread_unicode(img_path)
+                    if img is not None:
+                        annotated = draw_boxes(img, boxes)
+                        thumbs.append(make_thumb_bgr(annotated))
+                        thumb_labels.append(f"{xml_path.name}（{len(lines)} 个框）")
+                except Exception as exc:  # noqa: BLE001
+                    self.log.emit(f"缩略图生成失败：{img_path}（{exc}）")
 
         # 保存 classes.txt
         classes_out = (labels_dir if labels_dir else xml_dir) / "classes.txt"
@@ -165,6 +198,9 @@ class Xml2YoloWorker(QtCore.QThread):
                 self.log.emit(f"无标注图片 {len(unlabeled)} 张，已{action} {moved} 张到：{unlabeled_dir}")
             else:
                 self.log.emit("所有图片都有标注。")
+
+        if thumbs:
+            self.previews.emit(thumbs, thumb_labels)
 
         self.log.emit(f"\n完成：转换 {ok} 张标注，失败 {fail} 张。")
         self.finished.emit(ok, fail, unlabeled_count)
@@ -252,6 +288,10 @@ class Xml2YoloModule(QtWidgets.QWidget):
         cls_row.addWidget(self.classes_edit, 1)
         layout.addLayout(cls_row)
 
+        # 翻页预览（带框标注）
+        self.browser = PreviewBrowser(dual=False)
+        layout.addWidget(self.browser)
+
         # 开始按钮
         self.start_btn = QtWidgets.QPushButton("开始转换")
         self.start_btn.setMinimumHeight(36)
@@ -295,6 +335,7 @@ class Xml2YoloModule(QtWidgets.QWidget):
 
         self.log_view.clear()
         self.log_view.appendPlainText("开始转换...")
+        self.browser.clear()
         self.start_btn.setEnabled(False)
 
         self._worker = Xml2YoloWorker(
@@ -307,11 +348,15 @@ class Xml2YoloModule(QtWidgets.QWidget):
             no_unlabeled=self.no_unl_check.isChecked(),
         )
         self._worker.log.connect(self._append_log)
+        self._worker.previews.connect(self._on_previews)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
 
     def _append_log(self, text):
         self.log_view.appendPlainText(text)
+
+    def _on_previews(self, items, labels):
+        self.browser.set_data(items, labels)
 
     def _on_finished(self, ok, fail, unlabeled):
         self.start_btn.setEnabled(True)

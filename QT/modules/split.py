@@ -12,7 +12,11 @@ import random
 import shutil
 from pathlib import Path
 
+from PIL import Image, ImageOps
+
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
+
+from modules._preview import PreviewBrowser, make_thumb_rgb
 
 SUPPORTED_EXTS = {
     ".JPG", ".JPEG", ".PNG", ".BMP", ".WEBP", ".TIF", ".TIFF",
@@ -32,6 +36,7 @@ class SplitWorker(QtCore.QThread):
     """后台执行数据集切分，避免阻塞界面。"""
 
     log = Signal(str)
+    previews = Signal(object, object)  # (缩略图列表, 文件名列表)
     finished = Signal(int, int)  # (已切分图片数, 缺失标签数)
 
     def __init__(self, images_dir, labels_dir, output_dir, train_pct, val_pct,
@@ -70,6 +75,17 @@ class SplitWorker(QtCore.QThread):
             random.Random(self.seed).shuffle(shuffled)
         else:
             random.shuffle(shuffled)
+
+        # 预览示例图（前 200 张）
+        thumbs = []
+        thumb_labels = []
+        for p in shuffled[:200]:
+            try:
+                with Image.open(p) as im:
+                    thumbs.append(make_thumb_rgb(ImageOps.exif_transpose(im)))
+                thumb_labels.append(p.name)
+            except Exception as exc:  # noqa: BLE001
+                self.log.emit(f"缩略图生成失败：{p}（{exc}）")
 
         n = len(shuffled)
         n_train = int(round(n * self.train_pct / 100))
@@ -111,6 +127,9 @@ class SplitWorker(QtCore.QThread):
 
         if self.gen_yaml:
             self._write_yaml(out, labels_dir is not None)
+
+        if thumbs:
+            self.previews.emit(thumbs, thumb_labels)
 
         self.log.emit(f"\n完成：已切分 {n} 张图片" +
                       (f"，缺失标签 {missing} 个。" if missing else "。"))
@@ -237,6 +256,10 @@ class SplitModule(QtWidgets.QWidget):
         yaml_row.addWidget(self.names_edit, 1)
         layout.addLayout(yaml_row)
 
+        # 翻页预览（示例图片）
+        self.browser = PreviewBrowser(dual=False)
+        layout.addWidget(self.browser)
+
         # 开始按钮
         self.start_btn = QtWidgets.QPushButton("开始切分")
         self.start_btn.setMinimumHeight(36)
@@ -285,6 +308,7 @@ class SplitModule(QtWidgets.QWidget):
 
         self.log_view.clear()
         self.log_view.appendPlainText("开始切分...")
+        self.browser.clear()
         self.start_btn.setEnabled(False)
 
         self._worker = SplitWorker(
@@ -300,11 +324,15 @@ class SplitModule(QtWidgets.QWidget):
             names=self.names_edit.text(),
         )
         self._worker.log.connect(self._append_log)
+        self._worker.previews.connect(self._on_previews)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
 
     def _append_log(self, text):
         self.log_view.appendPlainText(text)
+
+    def _on_previews(self, items, labels):
+        self.browser.set_data(items, labels)
 
     def _on_finished(self, count, missing):
         self.start_btn.setEnabled(True)
