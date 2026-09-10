@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from qt_binding import QtCore, QtGui, QtWidgets
+from modules.analysis import AnalysisModule
 from modules.augment import AugmentModule
 from modules.converter import ConverterModule
 from modules.dedup import DedupModule
@@ -199,6 +200,7 @@ MODULES = [
     OverexposureModule,
     UnderexposureModule,
     AugmentModule,
+    AnalysisModule,
     SplitModule,
 ]
 

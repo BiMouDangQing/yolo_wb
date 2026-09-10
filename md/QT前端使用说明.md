@@ -31,7 +31,8 @@ python qt.py
 | 6 | 过曝处理 | `QT/modules/overexposure.py` | 压暗高光、校正过曝 |
 | 7 | 过暗处理 | `QT/modules/underexposure.py` | 提亮暗部、恢复细节 |
 | 8 | 数据增强 | `QT/modules/augment.py` | 翻转/旋转/色彩/噪声增强，可同步标签 |
-| 9 | 数据集切分 | `QT/modules/split.py` | 切分 train/val/test |
+| 9 | 数据集分析 | `QT/modules/analysis.py` | 统计标注、剔除未标注、生成分析 CSV |
+| 10 | 数据集切分 | `QT/modules/split.py` | 切分 train/val/test |
 
 ---
 
@@ -99,7 +100,17 @@ python qt.py
 - 提供 labels 时，几何增强会同步生成同名 `.txt`（坐标随翻转/旋转变换）；色彩与噪声增强则复制原标签内容，使增强结果可直接用于训练。
 - 预览：可翻页浏览每组「原图 / 增强结果」（最多 200 组）。
 
-### 3.8 数据集切分
+### 3.8 数据集分析
+
+扫描 images 目录，统计标注情况与各类别框数量，可选剔除未标注图片，并生成分析 CSV。
+
+- images 目录（必填）、labels 目录（留空=与图片同目录的 `.txt`）。
+- 未标注输出目录：勾选「剔除未标注图片」后生效，留空默认 images 同级下的 `unlabeled`；可选「复制 / 移动」。
+- CSV 输出：留空默认生成在 images 目录下的 `dataset_analysis.csv`，内容包含摘要（图片总数/已标注/未标注/总框数）、类别统计（class_id/类别/框数量）、图片明细。
+- 类别名：逗号分隔手动指定；留空自动读 `labels/classes.txt`，否则按 class_id 显示。
+- 结果：统计表格展示每个类别的框数量；无标注图片被复制/移动到指定目录。
+
+### 3.9 数据集切分
 
 - images 目录（必填）、labels 目录（可选，同步切分同名 `.txt`）。
 - 比例：train % + val %，test 自动 = 100 − train − val。
