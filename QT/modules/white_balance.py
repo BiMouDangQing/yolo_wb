@@ -39,13 +39,27 @@ def imread_unicode(path):
 
 
 def imwrite_unicode(path, img):
-    """保存图片（支持中文等非 ASCII 路径）。"""
-    ext = Path(path).suffix or ".jpg"
+    """保存图片（支持中文等非 ASCII 路径）。
+
+    先写入同目录临时文件，再原子替换到目标路径，
+    避免覆盖过程中出错导致原文件损坏或未替换。
+    """
+    path = Path(path)
+    ext = path.suffix or ".jpg"
     ok, buf = cv2.imencode(ext, img)
     if not ok:
         return False
-    buf.tofile(str(path))
-    return True
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        buf.tofile(str(tmp))
+        tmp.replace(path)
+        return True
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False
 
 
 def _gain_factors(img_bgr, method, manual_gains):
