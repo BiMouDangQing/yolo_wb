@@ -14,6 +14,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from config import load as load_config, save as save_config
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_bgr
@@ -205,6 +206,7 @@ class WhiteBalanceModule(QtWidgets.QWidget):
         super().__init__(parent)
         self._worker = None
         self._build_ui()
+        self._restore_config()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -293,6 +295,31 @@ class WhiteBalanceModule(QtWidgets.QWidget):
         self.output_edit.setEnabled(not checked)
         self.output_btn.setEnabled(not checked)
 
+    def _restore_config(self):
+        """恢复上次保存的路径与参数。"""
+        cfg = load_config("white_balance")
+        self.input_edit.setText(cfg.get("input_path", ""))
+        self.output_edit.setText(cfg.get("output_dir", ""))
+        self.replace_check.setChecked(bool(cfg.get("replace", False)))
+        method = cfg.get("method", "gray_world")
+        idx = self.method_combo.findData(method)
+        if idx >= 0:
+            self.method_combo.setCurrentIndex(idx)
+        for key in ("B", "G", "R"):
+            self.gain_spins[key].setValue(float(cfg.get(f"gain_{key.lower()}", 1.0)))
+
+    def _persist_config(self):
+        """保存当前路径与参数。"""
+        save_config("white_balance", {
+            "input_path": self.input_edit.text().strip(),
+            "output_dir": self.output_edit.text().strip(),
+            "replace": self.replace_check.isChecked(),
+            "method": self.method_combo.currentData(),
+            "gain_b": self.gain_spins["B"].value(),
+            "gain_g": self.gain_spins["G"].value(),
+            "gain_r": self.gain_spins["R"].value(),
+        })
+
     def _pick_input_dir(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择输入文件夹")
         if path:
@@ -329,6 +356,7 @@ class WhiteBalanceModule(QtWidgets.QWidget):
             )
             return
 
+        self._persist_config()
         self.log_view.clear()
         self.log_view.appendPlainText("开始处理...")
         self.browser.clear()

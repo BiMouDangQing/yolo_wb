@@ -8,6 +8,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
+from config import load as load_config, save as save_config
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_rgb
@@ -135,6 +136,7 @@ class ConverterModule(QtWidgets.QWidget):
         super().__init__(parent)
         self._worker = None
         self._build_ui()
+        self._restore_config()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -233,6 +235,28 @@ class ConverterModule(QtWidgets.QWidget):
         self.output_edit.setEnabled(not checked)
         self.output_btn.setEnabled(not checked)
 
+    def _restore_config(self):
+        """恢复上次保存的路径与参数。"""
+        cfg = load_config("converter")
+        self.input_edit.setText(cfg.get("input_path", ""))
+        self.output_edit.setText(cfg.get("output_dir", ""))
+        self.quality_spin.setValue(int(cfg.get("quality", 95)))
+        self.replace_check.setChecked(bool(cfg.get("replace", False)))
+        mode = cfg.get("mode", "jpg")
+        idx = self.mode_combo.findData(mode)
+        if idx >= 0:
+            self.mode_combo.setCurrentIndex(idx)
+
+    def _persist_config(self):
+        """保存当前路径与参数。"""
+        save_config("converter", {
+            "mode": self.mode_combo.currentData(),
+            "input_path": self.input_edit.text().strip(),
+            "output_dir": self.output_edit.text().strip(),
+            "quality": self.quality_spin.value(),
+            "replace": self.replace_check.isChecked(),
+        })
+
     def _start(self):
         input_path = self.input_edit.text().strip()
         output_dir = self.output_edit.text().strip()
@@ -245,6 +269,7 @@ class ConverterModule(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "提示", "请填写保存路径，或勾选“替换原文件”。")
             return
 
+        self._persist_config()
         self.log_view.clear()
         self.log_view.appendPlainText("开始转换...")
         self.browser.clear()

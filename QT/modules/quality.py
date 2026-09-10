@@ -13,6 +13,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from config import load as load_config, save as save_config
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_bgr
@@ -135,6 +136,7 @@ class QualityModule(QtWidgets.QWidget):
         super().__init__(parent)
         self._worker = None
         self._build_ui()
+        self._restore_config()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -215,6 +217,28 @@ class QualityModule(QtWidgets.QWidget):
         if path:
             self.input_edit.setText(path)
 
+    def _restore_config(self):
+        """恢复上次保存的路径与参数。"""
+        cfg = load_config("quality")
+        self.input_edit.setText(cfg.get("input_path", ""))
+        self.blur_spin.setValue(int(cfg.get("blur_th", 100)))
+        self.dark_spin.setValue(int(cfg.get("dark_th", 15)))
+        self.over_spin.setValue(float(cfg.get("over_th", 0.6)))
+        action = cfg.get("action", "report")
+        idx = self.action_combo.findData(action)
+        if idx >= 0:
+            self.action_combo.setCurrentIndex(idx)
+
+    def _persist_config(self):
+        """保存当前路径与参数。"""
+        save_config("quality", {
+            "input_path": self.input_edit.text().strip(),
+            "blur_th": self.blur_spin.value(),
+            "dark_th": self.dark_spin.value(),
+            "over_th": self.over_spin.value(),
+            "action": self.action_combo.currentData(),
+        })
+
     def _start(self):
         input_path = self.input_edit.text().strip()
         if not input_path:
@@ -232,6 +256,7 @@ class QualityModule(QtWidgets.QWidget):
             if ret != QtWidgets.QMessageBox.Yes:
                 return
 
+        self._persist_config()
         self.log_view.clear()
         self.log_view.appendPlainText("开始筛选...")
         self.browser.clear()

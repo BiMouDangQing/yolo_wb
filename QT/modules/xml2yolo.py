@@ -10,6 +10,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from config import load as load_config, save as save_config
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_bgr
@@ -213,6 +214,7 @@ class Xml2YoloModule(QtWidgets.QWidget):
         super().__init__(parent)
         self._worker = None
         self._build_ui()
+        self._restore_config()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -327,12 +329,39 @@ class Xml2YoloModule(QtWidgets.QWidget):
         if path:
             self.unlabeled_edit.setText(path)
 
+    def _restore_config(self):
+        """恢复上次保存的路径与参数。"""
+        cfg = load_config("xml2yolo")
+        self.images_edit.setText(cfg.get("images_dir", ""))
+        self.xml_edit.setText(cfg.get("xml_dir", ""))
+        self.labels_edit.setText(cfg.get("labels_dir", ""))
+        self.unlabeled_edit.setText(cfg.get("unlabeled_dir", ""))
+        self.classes_edit.setText(cfg.get("classes", ""))
+        self.no_unl_check.setChecked(bool(cfg.get("no_unlabeled", False)))
+        move = cfg.get("move", False)
+        idx = self.move_combo.findData(move)
+        if idx >= 0:
+            self.move_combo.setCurrentIndex(idx)
+
+    def _persist_config(self):
+        """保存当前路径与参数。"""
+        save_config("xml2yolo", {
+            "images_dir": self.images_edit.text().strip(),
+            "xml_dir": self.xml_edit.text().strip(),
+            "labels_dir": self.labels_edit.text().strip(),
+            "unlabeled_dir": self.unlabeled_edit.text().strip(),
+            "classes": self.classes_edit.text().strip(),
+            "move": self.move_combo.currentData(),
+            "no_unlabeled": self.no_unl_check.isChecked(),
+        })
+
     def _start(self):
         images_dir = self.images_edit.text().strip()
         if not images_dir:
             QtWidgets.QMessageBox.warning(self, "提示", "请选择 images 目录。")
             return
 
+        self._persist_config()
         self.log_view.clear()
         self.log_view.appendPlainText("开始转换...")
         self.browser.clear()

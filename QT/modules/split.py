@@ -14,6 +14,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
+from config import load as load_config, save as save_config
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_rgb
@@ -163,6 +164,7 @@ class SplitModule(QtWidgets.QWidget):
         super().__init__(parent)
         self._worker = None
         self._build_ui()
+        self._restore_config()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -290,6 +292,38 @@ class SplitModule(QtWidgets.QWidget):
         if path:
             self.output_edit.setText(path)
 
+    def _restore_config(self):
+        """恢复上次保存的路径与参数。"""
+        cfg = load_config("split")
+        self.images_edit.setText(cfg.get("images_dir", ""))
+        self.labels_edit.setText(cfg.get("labels_dir", ""))
+        self.output_edit.setText(cfg.get("output_dir", ""))
+        self.train_spin.setValue(int(cfg.get("train_pct", 80)))
+        self.val_spin.setValue(int(cfg.get("val_pct", 10)))
+        self.seed_spin.setValue(int(cfg.get("seed", 42)))
+        self.nc_spin.setValue(int(cfg.get("nc", 1)))
+        self.names_edit.setText(cfg.get("names", "class0"))
+        self.yaml_check.setChecked(bool(cfg.get("gen_yaml", True)))
+        mode = cfg.get("mode", "copy")
+        idx = self.mode_combo.findData(mode)
+        if idx >= 0:
+            self.mode_combo.setCurrentIndex(idx)
+
+    def _persist_config(self):
+        """保存当前路径与参数。"""
+        save_config("split", {
+            "images_dir": self.images_edit.text().strip(),
+            "labels_dir": self.labels_edit.text().strip(),
+            "output_dir": self.output_edit.text().strip(),
+            "train_pct": self.train_spin.value(),
+            "val_pct": self.val_spin.value(),
+            "mode": self.mode_combo.currentData(),
+            "seed": self.seed_spin.value(),
+            "gen_yaml": self.yaml_check.isChecked(),
+            "nc": self.nc_spin.value(),
+            "names": self.names_edit.text(),
+        })
+
     def _start(self):
         images_dir = self.images_edit.text().strip()
         output_dir = self.output_edit.text().strip()
@@ -306,6 +340,7 @@ class SplitModule(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "提示", "train + val 比例不能超过 100。")
             return
 
+        self._persist_config()
         self.log_view.clear()
         self.log_view.appendPlainText("开始切分...")
         self.browser.clear()

@@ -13,6 +13,7 @@ import csv
 import shutil
 from pathlib import Path
 
+from config import load as load_config, save as save_config
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 # 可处理的图片格式（与其它模块一致）
@@ -230,6 +231,7 @@ class AnalysisModule(QtWidgets.QWidget):
         super().__init__(parent)
         self._worker = None
         self._build_ui()
+        self._restore_config()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -263,15 +265,20 @@ class AnalysisModule(QtWidgets.QWidget):
         lbl_row.addWidget(lbl_btn)
         layout.addLayout(lbl_row)
 
-        # 未标注输出目录
+        # 未标注输出目录（留空 = 不剔除）
         unl_row = QtWidgets.QHBoxLayout()
         unl_row.addWidget(QtWidgets.QLabel("未标注输出:"))
         self.unlabeled_edit = QtWidgets.QLineEdit()
-        self.unlabeled_edit.setPlaceholderText("留空表示 images 同级下的 unlabeled")
+        self.unlabeled_edit.setPlaceholderText("留空表示不剔除；填目录则把未标注图片移到该目录")
         unl_row.addWidget(self.unlabeled_edit, 1)
         unl_btn = QtWidgets.QPushButton("浏览")
         unl_btn.clicked.connect(self._pick_unlabeled)
         unl_row.addWidget(unl_btn)
+        unl_row.addWidget(QtWidgets.QLabel("方式:"))
+        self.move_combo = QtWidgets.QComboBox()
+        self.move_combo.addItem("复制", "copy")
+        self.move_combo.addItem("移动", "move")
+        unl_row.addWidget(self.move_combo)
         layout.addLayout(unl_row)
 
         # CSV 输出
@@ -284,20 +291,6 @@ class AnalysisModule(QtWidgets.QWidget):
         csv_btn.clicked.connect(self._pick_csv)
         csv_row.addWidget(csv_btn)
         layout.addLayout(csv_row)
-
-        # 选项
-        opt_row = QtWidgets.QHBoxLayout()
-        self.remove_check = QtWidgets.QCheckBox("剔除未标注图片")
-        self.remove_check.toggled.connect(self._on_remove_toggled)
-        opt_row.addWidget(self.remove_check)
-        opt_row.addSpacing(12)
-        opt_row.addWidget(QtWidgets.QLabel("处理方式:"))
-        self.move_combo = QtWidgets.QComboBox()
-        self.move_combo.addItem("复制", "copy")
-        self.move_combo.addItem("移动", "move")
-        opt_row.addWidget(self.move_combo)
-        opt_row.addStretch()
-        layout.addLayout(opt_row)
 
         # 类别名
         cls_row = QtWidgets.QHBoxLayout()
@@ -353,16 +346,38 @@ class AnalysisModule(QtWidgets.QWidget):
         if path:
             self.csv_edit.setText(path)
 
-    def _on_remove_toggled(self, checked):
-        self.unlabeled_edit.setEnabled(checked)
-        self.move_combo.setEnabled(checked)
+    def _restore_config(self):
+        """恢复上次保存的路径与参数。"""
+        cfg = load_config("analysis")
+        self.images_edit.setText(cfg.get("images_dir", ""))
+        self.labels_edit.setText(cfg.get("labels_dir", ""))
+        self.unlabeled_edit.setText(cfg.get("unlabeled_dir", ""))
+        self.csv_edit.setText(cfg.get("csv_path", ""))
+        self.classes_edit.setText(cfg.get("class_names", ""))
+        move = cfg.get("move_mode", "copy")
+        idx = self.move_combo.findData(move)
+        if idx >= 0:
+            self.move_combo.setCurrentIndex(idx)
+
+    def _persist_config(self):
+        """保存当前路径与参数，下次启动自动恢复。"""
+        save_config("analysis", {
+            "images_dir": self.images_edit.text().strip(),
+            "labels_dir": self.labels_edit.text().strip(),
+            "unlabeled_dir": self.unlabeled_edit.text().strip(),
+            "csv_path": self.csv_edit.text().strip(),
+            "class_names": self.classes_edit.text().strip(),
+            "move_mode": self.move_combo.currentData(),
+        })
 
     def _start(self):
         images_dir = self.images_edit.text().strip()
+        unlabeled_dir = self.unlabeled_edit.text().strip()
         if not images_dir:
             QtWidgets.QMessageBox.warning(self, "提示", "请选择 images 目录。")
             return
 
+        self._persist_config()
         self.log_view.clear()
         self.table.setRowCount(0)
         self.start_btn.setEnabled(False)
@@ -370,9 +385,9 @@ class AnalysisModule(QtWidgets.QWidget):
         self._worker = AnalysisWorker(
             images_dir=images_dir,
             labels_dir=self.labels_edit.text().strip(),
-            unlabeled_dir=self.unlabeled_edit.text().strip(),
+            unlabeled_dir=unlabeled_dir,
             csv_path=self.csv_edit.text().strip(),
-            remove_unlabeled=self.remove_check.isChecked(),
+            remove_unlabeled=bool(unlabeled_dir),
             move_mode=self.move_combo.currentData(),
             class_names=self.classes_edit.text().strip(),
         )

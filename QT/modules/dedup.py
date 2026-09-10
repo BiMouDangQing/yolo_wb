@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageOps
 
+from config import load as load_config, save as save_config
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_rgb
@@ -140,6 +141,7 @@ class DedupModule(QtWidgets.QWidget):
         super().__init__(parent)
         self._worker = None
         self._build_ui()
+        self._restore_config()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -202,6 +204,24 @@ class DedupModule(QtWidgets.QWidget):
         if path:
             self.input_edit.setText(path)
 
+    def _restore_config(self):
+        """恢复上次保存的路径与参数。"""
+        cfg = load_config("dedup")
+        self.input_edit.setText(cfg.get("input_path", ""))
+        self.threshold_spin.setValue(int(cfg.get("threshold", 5)))
+        action = cfg.get("action", "report")
+        idx = self.action_combo.findData(action)
+        if idx >= 0:
+            self.action_combo.setCurrentIndex(idx)
+
+    def _persist_config(self):
+        """保存当前路径与参数。"""
+        save_config("dedup", {
+            "input_path": self.input_edit.text().strip(),
+            "threshold": self.threshold_spin.value(),
+            "action": self.action_combo.currentData(),
+        })
+
     def _start(self):
         input_path = self.input_edit.text().strip()
         if not input_path:
@@ -219,6 +239,7 @@ class DedupModule(QtWidgets.QWidget):
             if ret != QtWidgets.QMessageBox.Yes:
                 return
 
+        self._persist_config()
         self.log_view.clear()
         self.log_view.appendPlainText("开始扫描...")
         self.browser.clear()

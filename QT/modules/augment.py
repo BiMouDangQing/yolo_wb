@@ -22,6 +22,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from config import load as load_config, save as save_config
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_bgr
@@ -326,6 +327,7 @@ class AugmentModule(QtWidgets.QWidget):
         self._checks = {}   # key -> QCheckBox
         self._params = {}   # key -> QDoubleSpinBox
         self._build_ui()
+        self._restore_config()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -432,6 +434,30 @@ class AugmentModule(QtWidgets.QWidget):
         if path:
             self.output_edit.setText(path)
 
+    def _restore_config(self):
+        """恢复上次保存的路径与参数。"""
+        cfg = load_config("augment")
+        self.images_edit.setText(cfg.get("images_dir", ""))
+        self.labels_edit.setText(cfg.get("labels_dir", ""))
+        self.output_edit.setText(cfg.get("output_dir", ""))
+        checks = cfg.get("checks", {})
+        for key, check in self._checks.items():
+            check.setChecked(bool(checks.get(key, False)))
+        params = cfg.get("params", {})
+        for key, spin in self._params.items():
+            if key in params:
+                spin.setValue(float(params[key]))
+
+    def _persist_config(self):
+        """保存当前路径与参数。"""
+        save_config("augment", {
+            "images_dir": self.images_edit.text().strip(),
+            "labels_dir": self.labels_edit.text().strip(),
+            "output_dir": self.output_edit.text().strip(),
+            "checks": {k: c.isChecked() for k, c in self._checks.items()},
+            "params": {k: s.value() for k, s in self._params.items()},
+        })
+
     def _start(self):
         images_dir = self.images_edit.text().strip()
         output_dir = self.output_edit.text().strip()
@@ -460,6 +486,7 @@ class AugmentModule(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "提示", "请至少勾选一种增强方式。")
             return
 
+        self._persist_config()
         self.log_view.clear()
         self.log_view.appendPlainText("开始增强...")
         self.browser.clear()
