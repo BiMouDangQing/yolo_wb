@@ -19,10 +19,9 @@ from modules.underexposure import UnderexposureModule
 from modules.white_balance import WhiteBalanceModule
 from modules.xml2yolo import Xml2YoloModule
 
-# 项目根目录下的 logo 图片（两个都是 logo）
+# 项目根目录下的 logo 图片
 LOGO_PATHS = [
     Path(__file__).resolve().parent.parent / "lg.png",
-    Path(__file__).resolve().parent.parent / "log.png",
 ]
 
 # 全局样式：柔和绿色主调 + 少量红色点缀
