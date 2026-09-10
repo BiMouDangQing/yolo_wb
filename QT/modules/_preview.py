@@ -84,6 +84,12 @@ class PreviewBrowser(QtWidgets.QWidget):
         label = QtWidgets.QLabel(text)
         label.setAlignment(QtCore.Qt.AlignCenter)
         label.setMinimumHeight(160)
+        # 关键：让 label 大小完全由布局决定，忽略 pixmap 的 sizeHint，
+        # 避免翻页时因图片尺寸变化把界面越撑越大、变形。
+        label.setSizePolicy(
+            QtWidgets.QSizePolicy.Ignored,
+            QtWidgets.QSizePolicy.Ignored,
+        )
         label.setStyleSheet("background:#f0f0f0; border:1px solid #ccc;")
         return label
 
@@ -144,8 +150,12 @@ class PreviewBrowser(QtWidgets.QWidget):
     @staticmethod
     def _set_pixmap(label, pixmap):
         label.setText("")
+        size = label.size()
+        # 布局未完成或尺寸无效时不设置，避免空/异常尺寸
+        if size.width() <= 0 or size.height() <= 0:
+            return
         scaled = pixmap.scaled(
-            label.size(),
+            size,
             QtCore.Qt.KeepAspectRatio,
             QtCore.Qt.SmoothTransformation,
         )
