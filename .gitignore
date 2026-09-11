@@ -13,6 +13,9 @@ env/
 .vscode/
 .idea/
 
+# 运行时配置记忆（本地路径，不纳入版本库）
+QT/config.json
+
 # 模型权重（大文件，不纳入版本库）
 *.pt
 *.onnx
