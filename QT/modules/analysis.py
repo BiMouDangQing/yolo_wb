@@ -49,6 +49,7 @@ class AnalysisWorker(QtCore.QThread):
     """后台执行数据集分析，避免阻塞界面。"""
 
     log = Signal(str)
+    progress = Signal(int, int)       # (当前进度, 总数)
     stats = Signal(object)          # 统计结果 dict
     finished = Signal(int, int, int, int)  # (总图数, 已标注, 未标注, 总框数)
 
@@ -116,7 +117,8 @@ class AnalysisWorker(QtCore.QThread):
         unlabeled_list = []
         details = []
 
-        for img in files:
+        for i, img in enumerate(files, 1):
+            self.progress.emit(i, len(files))
             rel = img.relative_to(images)
             if labels_dir is not None:
                 label_path = labels_dir / rel.with_suffix(".txt")
@@ -308,6 +310,12 @@ class AnalysisModule(QtWidgets.QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table, 1)
 
+        # 进度条
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+
         # 开始按钮
         self.start_btn = QtWidgets.QPushButton("开始分析")
         self.start_btn.setMinimumHeight(36)
@@ -380,6 +388,8 @@ class AnalysisModule(QtWidgets.QWidget):
         self._persist_config()
         self.log_view.clear()
         self.table.setRowCount(0)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMaximum(0)
         self.start_btn.setEnabled(False)
 
         self._worker = AnalysisWorker(
@@ -392,9 +402,14 @@ class AnalysisModule(QtWidgets.QWidget):
             class_names=self.classes_edit.text().strip(),
         )
         self._worker.log.connect(self._append_log)
+        self._worker.progress.connect(self._on_progress)
         self._worker.stats.connect(self._on_stats)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
+
+    def _on_progress(self, current, total):
+        self.progress_bar.setMaximum(total)
+        self.progress_bar.setValue(current)
 
     def _append_log(self, text):
         self.log_view.appendPlainText(text)

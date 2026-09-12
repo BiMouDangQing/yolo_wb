@@ -46,6 +46,7 @@ class Xml2YoloWorker(QtCore.QThread):
     """后台执行 XML 转 YOLO 与无标注筛选。"""
 
     log = Signal(str)
+    progress = Signal(int, int)  # (当前进度, 总数)
     previews = Signal(object, object)  # (缩略图列表, 文件名列表)
     finished = Signal(int, int, int)  # (转换数, 失败数, 无标注数)
 
@@ -118,7 +119,8 @@ class Xml2YoloWorker(QtCore.QThread):
         thumbs = []
         thumb_labels = []
         annotated_stems = set()
-        for xml_path, filename, width, height, boxes in records:
+        for i, (xml_path, filename, width, height, boxes) in enumerate(records, 1):
+            self.progress.emit(i, len(records))
             annotated_stems.add(xml_path.stem)
             if filename:
                 annotated_stems.add(Path(filename).stem)
@@ -294,6 +296,12 @@ class Xml2YoloModule(QtWidgets.QWidget):
         self.browser = PreviewBrowser(dual=False)
         layout.addWidget(self.browser)
 
+        # 进度条
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+
         # 开始按钮
         self.start_btn = QtWidgets.QPushButton("开始转换")
         self.start_btn.setMinimumHeight(36)
@@ -365,6 +373,8 @@ class Xml2YoloModule(QtWidgets.QWidget):
         self.log_view.clear()
         self.log_view.appendPlainText("开始转换...")
         self.browser.clear()
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMaximum(0)
         self.start_btn.setEnabled(False)
 
         self._worker = Xml2YoloWorker(
@@ -377,9 +387,14 @@ class Xml2YoloModule(QtWidgets.QWidget):
             no_unlabeled=self.no_unl_check.isChecked(),
         )
         self._worker.log.connect(self._append_log)
+        self._worker.progress.connect(self._on_progress)
         self._worker.previews.connect(self._on_previews)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
+
+    def _on_progress(self, current, total):
+        self.progress_bar.setMaximum(total)
+        self.progress_bar.setValue(current)
 
     def _append_log(self, text):
         self.log_view.appendPlainText(text)

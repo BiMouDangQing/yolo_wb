@@ -104,6 +104,7 @@ class WhiteBalanceWorker(QtCore.QThread):
     """后台执行白平衡处理，避免阻塞界面。"""
 
     log = Signal(str)
+    progress = Signal(int, int)       # (当前进度, 总数)
     previews = Signal(object, object)  # (缩略图列表, 文件名列表)
     finished = Signal(int, int)       # (成功数, 失败数)
 
@@ -155,7 +156,8 @@ class WhiteBalanceWorker(QtCore.QThread):
         ok = fail = 0
         thumbs = []
         thumb_labels = []
-        for src in files:
+        for i, src in enumerate(files, 1):
+            self.progress.emit(i, len(files))
             img = imread_unicode(src)
             if img is None:
                 fail += 1
@@ -270,6 +272,12 @@ class WhiteBalanceModule(QtWidgets.QWidget):
         self.browser = PreviewBrowser(dual=True)
         layout.addWidget(self.browser, 1)
 
+        # 进度条
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+
         # 开始按钮
         self.start_btn = QtWidgets.QPushButton("开始处理")
         self.start_btn.setMinimumHeight(36)
@@ -360,6 +368,8 @@ class WhiteBalanceModule(QtWidgets.QWidget):
         self.log_view.clear()
         self.log_view.appendPlainText("开始处理...")
         self.browser.clear()
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMaximum(0)
         self.start_btn.setEnabled(False)
 
         # 手动增益按 BGR 顺序传给 worker
@@ -377,9 +387,14 @@ class WhiteBalanceModule(QtWidgets.QWidget):
             replace_original=replace,
         )
         self._worker.log.connect(self._append_log)
+        self._worker.progress.connect(self._on_progress)
         self._worker.previews.connect(self._on_previews)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
+
+    def _on_progress(self, current, total):
+        self.progress_bar.setMaximum(total)
+        self.progress_bar.setValue(current)
 
     def _append_log(self, text):
         self.log_view.appendPlainText(text)
