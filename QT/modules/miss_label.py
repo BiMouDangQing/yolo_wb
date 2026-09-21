@@ -10,6 +10,8 @@
 """
 
 import csv
+import subprocess
+import sys
 from pathlib import Path
 
 import cv2
@@ -318,6 +320,20 @@ class MissLabelModule(QtWidgets.QWidget):
         csv_row.addWidget(csv_btn)
         layout.addLayout(csv_row)
 
+        # labelImg 外部工具
+        li_row = QtWidgets.QHBoxLayout()
+        li_row.addWidget(QtWidgets.QLabel("labelImg:"))
+        self.labelimg_edit = QtWidgets.QLineEdit()
+        self.labelimg_edit.setPlaceholderText("labelImg.py 路径，如 D:/model/labelImg-main/labelImg.py")
+        li_row.addWidget(self.labelimg_edit, 1)
+        li_btn = QtWidgets.QPushButton("浏览")
+        li_btn.clicked.connect(self._pick_labelimg)
+        li_row.addWidget(li_btn)
+        open_btn = QtWidgets.QPushButton("用 labelImg 打开")
+        open_btn.clicked.connect(self._open_labelimg)
+        li_row.addWidget(open_btn)
+        layout.addLayout(li_row)
+
         # 预览 / 标注 切换
         self.stack = QtWidgets.QStackedWidget()
         self.browser = PreviewBrowser(dual=False)
@@ -396,12 +412,55 @@ class MissLabelModule(QtWidgets.QWidget):
         if path:
             self.csv_edit.setText(path)
 
+    def _pick_labelimg(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "选择 labelImg.py", "", "Python 文件 (*.py);;所有文件 (*)"
+        )
+        if path:
+            self.labelimg_edit.setText(path)
+
+    def _open_labelimg(self):
+        """用 subprocess 启动外部 labelImg 标注当前 images 目录。"""
+        labelimg = self.labelimg_edit.text().strip()
+        images_dir = self.images_edit.text().strip()
+        labels_dir = self.labels_edit.text().strip()
+        if not labelimg:
+            QtWidgets.QMessageBox.warning(self, "提示", "请先设置 labelImg.py 路径。")
+            return
+        if not images_dir:
+            QtWidgets.QMessageBox.warning(self, "提示", "请先选择 images 目录。")
+            return
+        if not Path(labelimg).is_file():
+            QtWidgets.QMessageBox.warning(self, "提示", f"labelImg.py 不存在：{labelimg}")
+            return
+
+        cmd = [sys.executable, labelimg, images_dir]
+        classes_file = ""
+        if labels_dir:
+            p = Path(labels_dir) / "classes.txt"
+            if p.is_file():
+                classes_file = str(p)
+        if classes_file:
+            cmd.append(classes_file)
+        if labels_dir:
+            cmd.append(labels_dir)
+
+        try:
+            subprocess.Popen(cmd)
+            self.log_view.appendPlainText(
+                "已启动 labelImg（注意：labelImg 默认保存 Pascal VOC XML 格式，"
+                "请在 labelImg 里切换到 YOLO 格式后再标注）"
+            )
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self, "错误", f"启动 labelImg 失败：{exc}")
+
     def _restore_config(self):
         cfg = load_config("miss_label")
         self.model_edit.setText(cfg.get("model_path", ""))
         self.images_edit.setText(cfg.get("images_dir", ""))
         self.labels_edit.setText(cfg.get("labels_dir", ""))
         self.csv_edit.setText(cfg.get("csv_path", ""))
+        self.labelimg_edit.setText(cfg.get("labelimg_path", ""))
         self.conf_spin.setValue(float(cfg.get("conf", 0.3)))
         self.iou_spin.setValue(float(cfg.get("iou_th", 0.3)))
 
@@ -411,6 +470,7 @@ class MissLabelModule(QtWidgets.QWidget):
             "images_dir": self.images_edit.text().strip(),
             "labels_dir": self.labels_edit.text().strip(),
             "csv_path": self.csv_edit.text().strip(),
+            "labelimg_path": self.labelimg_edit.text().strip(),
             "conf": self.conf_spin.value(),
             "iou_th": self.iou_spin.value(),
         })
