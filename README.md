@@ -8,21 +8,22 @@
 
 ## ✨ 功能特性
 
-程序按推荐处理顺序提供了 11 个标签页：
+程序按推荐处理顺序提供了 12 个标签页：
 
 | # | 功能 | 说明 |
 | --- | --- | --- |
 | 1 | 图片转换 | HEIC/其他格式 → JPG，支持原地转换删除原图 |
 | 2 | 标注转换 | Pascal VOC / LabelImg XML → YOLO txt，并筛选无标注图片 |
 | 3 | 标注质检 | 检测格式错误 / 越界框 / 零负宽高 / 极小框 / 巨框 / 空标签 / 类别 ID 越界 |
-| 4 | 白平衡 | 灰度世界 / 白斑法 / 完美反射 / 手动增益，统一色温 |
-| 5 | 图片去重 | 感知哈希（dHash）找出重复或高度相似图片 |
-| 6 | 废图筛选 | 检测模糊 / 过暗 / 过曝图片 |
-| 7 | 过曝处理 | 高光压缩、降低亮度 |
-| 8 | 过暗处理 | 暗部提亮、CLAHE 增强细节 |
-| 9 | 数据增强 | 翻转 / 旋转 / 亮度 / 对比度 / 饱和度 / 色调 / 噪声，几何增强可同步变换 YOLO 标签 |
-| 10 | 数据集分析 | 统计各类别框数量、剔除未标注图片、生成分析 CSV |
-| 11 | 数据集切分 | 按比例切分 train / val / test，可生成 data.yaml |
+| 4 | 漏标检测 | 用模型找「模型框出来但标签没有」的疑似漏标 |
+| 5 | 白平衡 | 灰度世界 / 白斑法 / 完美反射 / 手动增益，统一色温 |
+| 6 | 图片去重 | 感知哈希（dHash）找出重复或高度相似图片 |
+| 7 | 废图筛选 | 检测模糊 / 过暗 / 过曝图片 |
+| 8 | 过曝处理 | 高光压缩、降低亮度 |
+| 9 | 过暗处理 | 暗部提亮、CLAHE 增强细节 |
+| 10 | 数据增强 | 翻转 / 旋转 / 亮度 / 对比度 / 饱和度 / 色调 / 噪声，几何增强可同步变换 YOLO 标签 |
+| 11 | 数据集分析 | 统计各类别框数量、剔除未标注图片、生成分析 CSV |
+| 12 | 数据集切分 | 按比例切分 train / val / test，可生成 data.yaml |
 
 所有支持预览的模块都提供「原图 / 结果」翻页预览；所有批量处理功能页均提供进度条，并会记住上次填写的路径与参数。
 
@@ -35,7 +36,7 @@
 - Windows（推荐）或其它支持 Qt 的操作系统
 - Python 3.8+
 - 依赖包：`PySide6`（或 PyQt6 / PyQt5）、`opencv-python`、`numpy`、`Pillow`
-- 可选：`pillow-heif`（HEIC/HEIF 图片转换需要）
+- 可选：`pillow-heif`（HEIC/HEIF 图片转换需要）；`ultralytics`（漏标检测功能需要）
 
 ### 安装依赖
 
@@ -72,6 +73,7 @@ yolo_data/
 │       ├── converter.py    # 图片转换
 │       ├── xml2yolo.py     # 标注转换
 │       ├── label_check.py  # 标注质检
+│       ├── miss_label.py   # 漏标检测
 │       ├── white_balance.py# 白平衡
 │       ├── dedup.py        # 图片去重
 │       ├── quality.py      # 废图筛选
@@ -84,6 +86,7 @@ yolo_data/
 │   ├── jpg.py / heic2jpg.py# 图片转换
 │   ├── xml2yolo.py         # 标注转换
 │   ├── label_check.py      # 标注质检
+│   ├── miss_label.py       # 漏标检测
 │   ├── overexposure.py / underexposure.py  # 过曝 / 过暗
 │   ├── augment.py          # 数据增强
 │   └── analysis.py         # 数据集分析
@@ -104,6 +107,7 @@ python tools/jpg.py -i ./images -o ./images_jpg
 python tools/heic2jpg.py -i ./photos -o ./photos_jpg --overwrite
 python tools/xml2yolo.py -i ./images -x ./xml -l ./labels
 python tools/label_check.py -i ./labels -o ./label_issues.csv --nc 2
+python tools/miss_label.py -m ./best.pt -i ./images -l ./labels -o ./miss.csv --conf 0.3
 python tools/overexposure.py -i ./images -o ./fixed --strength 50
 python tools/underexposure.py -i ./images -o ./fixed --strength 50
 python tools/augment.py -i ./images -l ./labels -o ./aug --hflip --rot90 --brightness 0.8
@@ -118,6 +122,7 @@ python tools/analysis.py -i ./images -l ./labels -o ./analysis.csv --remove --mo
 格式统一（图片转换）
   → 标注转换（XML → YOLO txt）
   → 标注质检（格式 / 几何硬伤检测）
+  → 漏标检测（模型反查疑似漏标）
   → 白平衡（统一色温）
   → 数据清洗（去重 / 剔废图）
   → 过曝 / 过暗校正
@@ -138,4 +143,4 @@ python tools/analysis.py -i ./images -l ./labels -o ./analysis.csv --remove --mo
 
 ## 📄 许可
 
-本项目仅用于图片数据处理，不包含模型训练与推理功能。
+本项目以图片数据处理为主；「漏标检测」功能需加载 YOLO 模型做辅助推理，模型文件需用户自行准备。

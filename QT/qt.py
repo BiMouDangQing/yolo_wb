@@ -14,6 +14,7 @@ from modules.augment import AugmentModule
 from modules.converter import ConverterModule
 from modules.dedup import DedupModule
 from modules.label_check import LabelCheckModule
+from modules.miss_label import MissLabelModule
 from modules.overexposure import OverexposureModule
 from modules.quality import QualityModule
 from modules.split import SplitModule
@@ -196,6 +197,7 @@ MODULES = [
     ConverterModule,
     Xml2YoloModule,
     LabelCheckModule,
+    MissLabelModule,
     WhiteBalanceModule,
     DedupModule,
     QualityModule,
