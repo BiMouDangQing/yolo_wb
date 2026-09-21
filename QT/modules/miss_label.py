@@ -18,6 +18,7 @@ import numpy as np
 from config import load as load_config, save as save_config
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
+from modules._annotation import AnnotationCanvas
 from modules._preview import PreviewBrowser, make_thumb_bgr
 
 SUPPORTED_EXTS = {
@@ -94,6 +95,7 @@ class MissLabelWorker(QtCore.QThread):
         self.conf = conf
         self.iou_th = iou_th
         self.csv_path = csv_path
+        self.miss_items = []  # 疑似漏标图片信息，供标注使用
 
     def run(self):
         try:
@@ -172,6 +174,12 @@ class MissLabelWorker(QtCore.QThread):
             if misses:
                 miss_images += 1
                 miss_count += len(misses)
+                self.miss_items.append({
+                    "img_path": str(img_path),
+                    "label_path": str(label_path),
+                    "label_boxes": label_boxes,
+                    "names": names,
+                })
                 for cls, conf, xyxy, nb in misses:
                     name = names.get(cls, str(cls)) if isinstance(names, dict) else str(cls)
                     self.log.emit(
@@ -231,6 +239,10 @@ class MissLabelModule(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None
+        self._miss_items = []
+        self._annotate_index = -1
+        self._new_boxes = []       # 当前标注图新增的框 (cls, cx, cy, w, h)
+        self._current_label_path = None
         self._build_ui()
         self._restore_config()
 
@@ -306,9 +318,37 @@ class MissLabelModule(QtWidgets.QWidget):
         csv_row.addWidget(csv_btn)
         layout.addLayout(csv_row)
 
-        # 预览（带框）
+        # 预览 / 标注 切换
+        self.stack = QtWidgets.QStackedWidget()
         self.browser = PreviewBrowser(dual=False)
-        layout.addWidget(self.browser, 1)
+        self.stack.addWidget(self.browser)
+
+        annot_page = QtWidgets.QWidget()
+        annot_layout = QtWidgets.QVBoxLayout(annot_page)
+        annot_layout.setContentsMargins(0, 0, 0, 0)
+        self.canvas = AnnotationCanvas()
+        self.canvas.shapeAdded.connect(self._on_shape_added)
+        annot_layout.addWidget(self.canvas, 1)
+        annot_row = QtWidgets.QHBoxLayout()
+        annot_row.addWidget(QtWidgets.QLabel("类别:"))
+        self.class_combo = QtWidgets.QComboBox()
+        annot_row.addWidget(self.class_combo, 1)
+        self.save_btn = QtWidgets.QPushButton("保存标注")
+        self.save_btn.clicked.connect(self._save_annotation)
+        annot_row.addWidget(self.save_btn)
+        back_btn = QtWidgets.QPushButton("返回预览")
+        back_btn.clicked.connect(self._back_to_preview)
+        annot_row.addWidget(back_btn)
+        annot_layout.addLayout(annot_row)
+        self.stack.addWidget(annot_page)
+
+        layout.addWidget(self.stack, 1)
+
+        # 标注当前图按钮
+        self.annotate_btn = QtWidgets.QPushButton("标注当前图")
+        self.annotate_btn.setEnabled(False)
+        self.annotate_btn.clicked.connect(self._enter_annotate)
+        layout.addWidget(self.annotate_btn)
 
         # 进度条
         self.progress_bar = QtWidgets.QProgressBar()
@@ -415,11 +455,93 @@ class MissLabelModule(QtWidgets.QWidget):
 
     def _on_previews(self, items, labels):
         self.browser.set_data(items, labels)
+        if self._worker is not None:
+            self._miss_items = self._worker.miss_items
 
     def _on_finished(self, total, miss_count):
         self.start_btn.setEnabled(True)
+        self.annotate_btn.setEnabled(miss_count > 0)
         QtWidgets.QMessageBox.information(
             self, "完成",
             f"检测完成：共 {total} 张图片，疑似漏标 {miss_count} 处。\n"
-            "请翻页查看带框预览，人工确认后补框。",
+            "请翻页查看带框预览，点「标注当前图」直接在图上补框。",
         )
+
+    # ---------- 标注模式 ----------
+    def _enter_annotate(self):
+        """进入标注模式，加载当前预览的图片到标注画布。"""
+        if not self._miss_items:
+            return
+        idx = getattr(self.browser, "_index", 0)
+        if idx < 0 or idx >= len(self._miss_items):
+            idx = 0
+        self._annotate_index = idx
+        item = self._miss_items[idx]
+
+        img = imread_unicode(item["img_path"])
+        if img is None:
+            QtWidgets.QMessageBox.warning(self, "提示", f"无法读取图片：{item['img_path']}")
+            return
+
+        # 填充类别下拉框
+        names = item["names"]
+        self.class_combo.clear()
+        if isinstance(names, dict):
+            for k in sorted(names):
+                self.class_combo.addItem(str(names[k]), int(k))
+        elif isinstance(names, (list, tuple)):
+            for i, n in enumerate(names):
+                self.class_combo.addItem(str(n), int(i))
+        else:
+            self.class_combo.addItem("0", 0)
+
+        # 显示原图 + 已有标签框（绿色）
+        self.canvas.set_image(img, [lb[1:] for lb in item["label_boxes"]])
+        self._new_boxes = []
+        self._current_label_path = item["label_path"]
+
+        self.stack.setCurrentIndex(1)
+        self.log_view.appendPlainText(
+            f"[标注模式] 当前图片：{Path(item['img_path']).name}，"
+            f"在图上拖拽画框即可"
+        )
+
+    def _on_shape_added(self, cx, cy, w, h):
+        """画布画完一个框：用当前选中的类别记录。"""
+        cls = self.class_combo.currentData()
+        if cls is None:
+            cls = 0
+        self._new_boxes.append((cls, cx, cy, w, h))
+        self.log_view.appendPlainText(
+            f"[新标注] class={cls} 框=({cx:.4f},{cy:.4f},{w:.4f},{h:.4f})"
+        )
+
+    def _save_annotation(self):
+        """把新增框追加到对应 YOLO txt。"""
+        if not self._current_label_path:
+            return
+        if not self._new_boxes:
+            QtWidgets.QMessageBox.information(self, "提示", "还没有画新框。")
+            return
+        path = Path(self._current_label_path)
+        lines = [
+            f"{cls} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}"
+            for cls, cx, cy, w, h in self._new_boxes
+        ]
+        try:
+            with path.open("a", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(self, "错误", f"保存失败：{exc}")
+            return
+        self.log_view.appendPlainText(
+            f"[已保存] {path.name} 追加 {len(lines)} 个框"
+        )
+        self._new_boxes = []
+        QtWidgets.QMessageBox.information(
+            self, "完成", f"已把 {len(lines)} 个框追加到：\n{path}"
+        )
+
+    def _back_to_preview(self):
+        """返回预览视图。"""
+        self.stack.setCurrentIndex(0)
