@@ -10,8 +10,6 @@
 """
 
 import csv
-import subprocess
-import sys
 from pathlib import Path
 
 import cv2
@@ -242,8 +240,6 @@ class MissLabelModule(QtWidgets.QWidget):
         super().__init__(parent)
         self._worker = None
         self._miss_items = []
-        self._annotate_index = -1
-        self._new_boxes = []       # 当前标注图新增的框 (cls, cx, cy, w, h)
         self._current_label_path = None
         self._build_ui()
         self._restore_config()
@@ -320,20 +316,6 @@ class MissLabelModule(QtWidgets.QWidget):
         csv_row.addWidget(csv_btn)
         layout.addLayout(csv_row)
 
-        # labelImg 外部工具
-        li_row = QtWidgets.QHBoxLayout()
-        li_row.addWidget(QtWidgets.QLabel("labelImg:"))
-        self.labelimg_edit = QtWidgets.QLineEdit()
-        self.labelimg_edit.setPlaceholderText("labelImg.py 路径，如 D:/model/labelImg-main/labelImg.py")
-        li_row.addWidget(self.labelimg_edit, 1)
-        li_btn = QtWidgets.QPushButton("浏览")
-        li_btn.clicked.connect(self._pick_labelimg)
-        li_row.addWidget(li_btn)
-        open_btn = QtWidgets.QPushButton("用 labelImg 打开")
-        open_btn.clicked.connect(self._open_labelimg)
-        li_row.addWidget(open_btn)
-        layout.addLayout(li_row)
-
         # 预览 / 标注 切换
         self.stack = QtWidgets.QStackedWidget()
         self.browser = PreviewBrowser(dual=False)
@@ -348,7 +330,11 @@ class MissLabelModule(QtWidgets.QWidget):
         annot_row = QtWidgets.QHBoxLayout()
         annot_row.addWidget(QtWidgets.QLabel("类别:"))
         self.class_combo = QtWidgets.QComboBox()
+        self.class_combo.currentIndexChanged.connect(self._on_class_changed)
         annot_row.addWidget(self.class_combo, 1)
+        undo_btn = QtWidgets.QPushButton("撤销")
+        undo_btn.clicked.connect(self.canvas.undo)
+        annot_row.addWidget(undo_btn)
         self.save_btn = QtWidgets.QPushButton("保存标注")
         self.save_btn.clicked.connect(self._save_annotation)
         annot_row.addWidget(self.save_btn)
@@ -412,55 +398,12 @@ class MissLabelModule(QtWidgets.QWidget):
         if path:
             self.csv_edit.setText(path)
 
-    def _pick_labelimg(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "选择 labelImg.py", "", "Python 文件 (*.py);;所有文件 (*)"
-        )
-        if path:
-            self.labelimg_edit.setText(path)
-
-    def _open_labelimg(self):
-        """用 subprocess 启动外部 labelImg 标注当前 images 目录。"""
-        labelimg = self.labelimg_edit.text().strip()
-        images_dir = self.images_edit.text().strip()
-        labels_dir = self.labels_edit.text().strip()
-        if not labelimg:
-            QtWidgets.QMessageBox.warning(self, "提示", "请先设置 labelImg.py 路径。")
-            return
-        if not images_dir:
-            QtWidgets.QMessageBox.warning(self, "提示", "请先选择 images 目录。")
-            return
-        if not Path(labelimg).is_file():
-            QtWidgets.QMessageBox.warning(self, "提示", f"labelImg.py 不存在：{labelimg}")
-            return
-
-        cmd = [sys.executable, labelimg, images_dir]
-        classes_file = ""
-        if labels_dir:
-            p = Path(labels_dir) / "classes.txt"
-            if p.is_file():
-                classes_file = str(p)
-        if classes_file:
-            cmd.append(classes_file)
-        if labels_dir:
-            cmd.append(labels_dir)
-
-        try:
-            subprocess.Popen(cmd)
-            self.log_view.appendPlainText(
-                "已启动 labelImg（注意：labelImg 默认保存 Pascal VOC XML 格式，"
-                "请在 labelImg 里切换到 YOLO 格式后再标注）"
-            )
-        except OSError as exc:
-            QtWidgets.QMessageBox.warning(self, "错误", f"启动 labelImg 失败：{exc}")
-
     def _restore_config(self):
         cfg = load_config("miss_label")
         self.model_edit.setText(cfg.get("model_path", ""))
         self.images_edit.setText(cfg.get("images_dir", ""))
         self.labels_edit.setText(cfg.get("labels_dir", ""))
         self.csv_edit.setText(cfg.get("csv_path", ""))
-        self.labelimg_edit.setText(cfg.get("labelimg_path", ""))
         self.conf_spin.setValue(float(cfg.get("conf", 0.3)))
         self.iou_spin.setValue(float(cfg.get("iou_th", 0.3)))
 
@@ -470,7 +413,6 @@ class MissLabelModule(QtWidgets.QWidget):
             "images_dir": self.images_edit.text().strip(),
             "labels_dir": self.labels_edit.text().strip(),
             "csv_path": self.csv_edit.text().strip(),
-            "labelimg_path": self.labelimg_edit.text().strip(),
             "conf": self.conf_spin.value(),
             "iou_th": self.iou_spin.value(),
         })
@@ -535,7 +477,6 @@ class MissLabelModule(QtWidgets.QWidget):
         idx = getattr(self.browser, "_index", 0)
         if idx < 0 or idx >= len(self._miss_items):
             idx = 0
-        self._annotate_index = idx
         item = self._miss_items[idx]
 
         img = imread_unicode(item["img_path"])
@@ -556,37 +497,53 @@ class MissLabelModule(QtWidgets.QWidget):
             self.class_combo.addItem("0", 0)
 
         # 显示原图 + 已有标签框（绿色）
-        self.canvas.set_image(img, [lb[1:] for lb in item["label_boxes"]])
-        self._new_boxes = []
+        names_dict = {}
+        if isinstance(names, dict):
+            names_dict = {int(k): str(v) for k, v in names.items()}
+        elif isinstance(names, (list, tuple)):
+            names_dict = {i: str(n) for i, n in enumerate(names)}
+        self.canvas.set_image(img, [lb[1:] for lb in item["label_boxes"]], names_dict)
         self._current_label_path = item["label_path"]
+
+        # 默认选中第一个类别
+        if self.class_combo.count() > 0:
+            self.class_combo.setCurrentIndex(0)
+            cls = self.class_combo.currentData()
+            if cls is not None:
+                self.canvas.set_current_class(int(cls))
 
         self.stack.setCurrentIndex(1)
         self.log_view.appendPlainText(
             f"[标注模式] 当前图片：{Path(item['img_path']).name}，"
-            f"在图上拖拽画框即可"
+            f"在图上拖拽画框，右键或「撤销」可删除上一个框"
         )
 
+    def _on_class_changed(self, _index):
+        cls = self.class_combo.currentData()
+        if cls is not None:
+            self.canvas.set_current_class(int(cls))
+
     def _on_shape_added(self, cx, cy, w, h):
-        """画布画完一个框：用当前选中的类别记录。"""
+        """画布画完一个框：画布已记录，这里只打日志。"""
         cls = self.class_combo.currentData()
         if cls is None:
             cls = 0
-        self._new_boxes.append((cls, cx, cy, w, h))
         self.log_view.appendPlainText(
             f"[新标注] class={cls} 框=({cx:.4f},{cy:.4f},{w:.4f},{h:.4f})"
         )
 
     def _save_annotation(self):
-        """把新增框追加到对应 YOLO txt。"""
+        """把画布上的新框追加到对应 YOLO txt。"""
         if not self._current_label_path:
             return
-        if not self._new_boxes:
+        new_boxes = self.canvas.get_new_boxes()
+        if not new_boxes:
             QtWidgets.QMessageBox.information(self, "提示", "还没有画新框。")
             return
         path = Path(self._current_label_path)
         lines = [
             f"{cls} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}"
-            for cls, cx, cy, w, h in self._new_boxes
+            for cls, cx, cy, w, h in new_boxes
         ]
         try:
             with path.open("a", encoding="utf-8") as f:
@@ -597,7 +554,6 @@ class MissLabelModule(QtWidgets.QWidget):
         self.log_view.appendPlainText(
             f"[已保存] {path.name} 追加 {len(lines)} 个框"
         )
-        self._new_boxes = []
         QtWidgets.QMessageBox.information(
             self, "完成", f"已把 {len(lines)} 个框追加到：\n{path}"
         )
