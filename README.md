@@ -8,20 +8,21 @@
 
 ## ✨ 功能特性
 
-程序按推荐处理顺序提供了 10 个标签页：
+程序按推荐处理顺序提供了 11 个标签页：
 
 | # | 功能 | 说明 |
 | --- | --- | --- |
 | 1 | 图片转换 | HEIC/其他格式 → JPG，支持原地转换删除原图 |
 | 2 | 标注转换 | Pascal VOC / LabelImg XML → YOLO txt，并筛选无标注图片 |
-| 3 | 白平衡 | 灰度世界 / 白斑法 / 完美反射 / 手动增益，统一色温 |
-| 4 | 图片去重 | 感知哈希（dHash）找出重复或高度相似图片 |
-| 5 | 废图筛选 | 检测模糊 / 过暗 / 过曝图片 |
-| 6 | 过曝处理 | 高光压缩、降低亮度 |
-| 7 | 过暗处理 | 暗部提亮、CLAHE 增强细节 |
-| 8 | 数据增强 | 翻转 / 旋转 / 亮度 / 对比度 / 饱和度 / 色调 / 噪声，几何增强可同步变换 YOLO 标签 |
-| 9 | 数据集分析 | 统计各类别框数量、剔除未标注图片、生成分析 CSV |
-| 10 | 数据集切分 | 按比例切分 train / val / test，可生成 data.yaml |
+| 3 | 标注质检 | 检测格式错误 / 越界框 / 零负宽高 / 极小框 / 巨框 / 空标签 / 类别 ID 越界 |
+| 4 | 白平衡 | 灰度世界 / 白斑法 / 完美反射 / 手动增益，统一色温 |
+| 5 | 图片去重 | 感知哈希（dHash）找出重复或高度相似图片 |
+| 6 | 废图筛选 | 检测模糊 / 过暗 / 过曝图片 |
+| 7 | 过曝处理 | 高光压缩、降低亮度 |
+| 8 | 过暗处理 | 暗部提亮、CLAHE 增强细节 |
+| 9 | 数据增强 | 翻转 / 旋转 / 亮度 / 对比度 / 饱和度 / 色调 / 噪声，几何增强可同步变换 YOLO 标签 |
+| 10 | 数据集分析 | 统计各类别框数量、剔除未标注图片、生成分析 CSV |
+| 11 | 数据集切分 | 按比例切分 train / val / test，可生成 data.yaml |
 
 所有支持预览的模块都提供「原图 / 结果」翻页预览；所有批量处理功能页均提供进度条，并会记住上次填写的路径与参数。
 
@@ -70,6 +71,7 @@ yolo_data/
 │       ├── _preview.py     # 通用翻页预览组件
 │       ├── converter.py    # 图片转换
 │       ├── xml2yolo.py     # 标注转换
+│       ├── label_check.py  # 标注质检
 │       ├── white_balance.py# 白平衡
 │       ├── dedup.py        # 图片去重
 │       ├── quality.py      # 废图筛选
@@ -81,6 +83,7 @@ yolo_data/
 ├── tools/                  # 命令行脚本（独立可运行，不依赖 Qt）
 │   ├── jpg.py / heic2jpg.py# 图片转换
 │   ├── xml2yolo.py         # 标注转换
+│   ├── label_check.py      # 标注质检
 │   ├── overexposure.py / underexposure.py  # 过曝 / 过暗
 │   ├── augment.py          # 数据增强
 │   └── analysis.py         # 数据集分析
@@ -100,6 +103,7 @@ yolo_data/
 python tools/jpg.py -i ./images -o ./images_jpg
 python tools/heic2jpg.py -i ./photos -o ./photos_jpg --overwrite
 python tools/xml2yolo.py -i ./images -x ./xml -l ./labels
+python tools/label_check.py -i ./labels -o ./label_issues.csv --nc 2
 python tools/overexposure.py -i ./images -o ./fixed --strength 50
 python tools/underexposure.py -i ./images -o ./fixed --strength 50
 python tools/augment.py -i ./images -l ./labels -o ./aug --hflip --rot90 --brightness 0.8
@@ -113,6 +117,7 @@ python tools/analysis.py -i ./images -l ./labels -o ./analysis.csv --remove --mo
 ```
 格式统一（图片转换）
   → 标注转换（XML → YOLO txt）
+  → 标注质检（格式 / 几何硬伤检测）
   → 白平衡（统一色温）
   → 数据清洗（去重 / 剔废图）
   → 过曝 / 过暗校正

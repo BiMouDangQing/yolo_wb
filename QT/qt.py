@@ -13,6 +13,7 @@ from modules.analysis import AnalysisModule
 from modules.augment import AugmentModule
 from modules.converter import ConverterModule
 from modules.dedup import DedupModule
+from modules.label_check import LabelCheckModule
 from modules.overexposure import OverexposureModule
 from modules.quality import QualityModule
 from modules.split import SplitModule
@@ -194,6 +195,7 @@ QToolTip {
 MODULES = [
     ConverterModule,
     Xml2YoloModule,
+    LabelCheckModule,
     WhiteBalanceModule,
     DedupModule,
     QualityModule,
