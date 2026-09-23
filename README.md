@@ -24,7 +24,7 @@
 | 10 | 数据增强 | 翻转 / 旋转 / 亮度 / 对比度 / 饱和度 / 色调 / 噪声，几何增强可同步变换 YOLO 标签 |
 | 11 | 数据集分析 | 统计各类别框数量、剔除未标注图片、生成分析 CSV |
 | 12 | 数据集切分 | 按比例切分 train / val / test，可生成 data.yaml |
-| 13 | 背景添加 | 背景图作负样本（缩放 + 复制 + 空标签），降低误检 |
+| 13 | 背景添加 | 背景图作负样本（按占比自动计算数量 + 随机增强扩充 + 空标签），降低误检 |
 
 所有支持预览的模块都提供「原图 / 结果」翻页预览；所有批量处理功能页均提供进度条，并会记住上次填写的路径与参数。
 
@@ -115,7 +115,7 @@ python tools/overexposure.py -i ./images -o ./fixed --strength 50
 python tools/underexposure.py -i ./images -o ./fixed --strength 50
 python tools/augment.py -i ./images -l ./labels -o ./aug --hflip --rot90 --brightness 0.8
 python tools/analysis.py -i ./images -l ./labels -o ./analysis.csv --remove --move
-python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -n 60 -s 1280
+python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -r 10 -s 1280
 ```
 
 ---

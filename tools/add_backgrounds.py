@@ -2,11 +2,11 @@
 背景图添加命令行工具：把背景图作为负样本加入数据集（降低误检）。
 
 与前端模块 `QT/modules/background.py` 对应，逻辑保持一致。
-自动：随机抽取背景图、缩放到目标分辨率、复制到 images、生成同名空标签文件。
+根据「背景占比」自动计算需要添加的背景图数量，背景图不足时用随机数据增强扩充，
+缩放到目标分辨率、复制到 images、生成同名空标签文件。
 
 用法:
-    python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -n 60 -s 1280
-    python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -n 60 -v 15 -s 1280
+    python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -r 10 -s 1280
 """
 
 import argparse
@@ -47,6 +47,36 @@ def resize_to_target(img_bgr, target):
     return cv2.resize(img_bgr, (new_w, new_h), interpolation=interp)
 
 
+def random_augment(img_bgr):
+    """对背景图随机应用数据增强（翻转/旋转/亮度/对比度/噪声），返回新图。"""
+    img = img_bgr.copy()
+    if random.random() < 0.5:
+        img = cv2.flip(img, 1)
+    if random.random() < 0.2:
+        img = cv2.flip(img, 0)
+    rot = random.choice([
+        None, cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_180,
+        cv2.ROTATE_90_COUNTERCLOCKWISE,
+    ])
+    if rot is not None:
+        img = cv2.rotate(img, rot)
+    if random.random() < 0.5:
+        factor = random.uniform(0.7, 1.3)
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.float32)
+        hsv[..., 2] = np.clip(hsv[..., 2] * factor, 0, 255)
+        img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+    if random.random() < 0.5:
+        factor = random.uniform(0.7, 1.3)
+        img = np.clip(
+            (img.astype(np.float32) - 127.5) * factor + 127.5, 0, 255
+        ).astype(np.uint8)
+    if random.random() < 0.3:
+        sigma = random.uniform(3, 12)
+        noise = np.random.normal(0, sigma, img.shape).astype(np.float32)
+        img = np.clip(img.astype(np.float32) + noise, 0, 255).astype(np.uint8)
+    return img
+
+
 def detect_structure(dataset_dir):
     d = Path(dataset_dir).expanduser()
     if not d.is_dir():
@@ -56,16 +86,12 @@ def detect_structure(dataset_dir):
             "split": True,
             "train_images": d / "images" / "train",
             "train_labels": d / "labels" / "train",
-            "val_images": d / "images" / "val" if (d / "images" / "val").is_dir() else None,
-            "val_labels": d / "labels" / "val" if (d / "labels" / "val").is_dir() else None,
         }
     if (d / "images").is_dir():
         return {
             "split": False,
             "train_images": d / "images",
             "train_labels": d / "labels",
-            "val_images": None,
-            "val_labels": None,
         }
     return None
 
@@ -81,37 +107,14 @@ def next_bg_index(images_dir):
     return idx
 
 
-def add_to(bg_pool, images_dir, labels_dir, target_size, tag):
-    if not images_dir:
-        return 0
-    images_dir.mkdir(parents=True, exist_ok=True)
-    labels_dir.mkdir(parents=True, exist_ok=True)
-    idx = next_bg_index(images_dir)
-    ok = 0
-    for bg in bg_pool:
-        img = imread_unicode(bg)
-        if img is None:
-            print(f"[失败] 无法读取背景图: {bg}")
-            continue
-        resized = resize_to_target(img, target_size)
-        dst = images_dir / f"bg_{idx:03d}{bg.suffix.lower() or '.jpg'}"
-        if not imwrite_unicode(dst, resized):
-            print(f"[失败] 保存失败: {dst}")
-            continue
-        (labels_dir / f"bg_{idx:03d}.txt").touch()
-        print(f"[{tag}] {bg.name} -> {dst.name}（空标签已生成）")
-        ok += 1
-        idx += 1
-    return ok
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="把背景图作为负样本加入数据集")
     parser.add_argument("--bg", "-b", required=True, help="背景图文件夹")
     parser.add_argument("--dataset", "-d", required=True, help="数据集根目录")
-    parser.add_argument("--train-count", "-n", type=int, default=60, help="训练集背景图数量，默认 60")
-    parser.add_argument("--val-count", "-v", type=int, default=0, help="验证集背景图数量，默认 0")
-    parser.add_argument("--size", "-s", type=int, default=1280, help="目标分辨率，默认 1280")
+    parser.add_argument("--ratio", "-r", type=int, default=10,
+                        help="背景占比（百分比，默认 10，建议 5~10）")
+    parser.add_argument("--size", "-s", type=int, default=1280,
+                        help="目标分辨率，默认 1280")
     args = parser.parse_args()
 
     bg_dir = Path(args.bg).expanduser().resolve()
@@ -122,32 +125,58 @@ def main() -> None:
     if structure is None:
         raise SystemExit(f"数据集目录不存在或结构无法识别: {args.dataset}")
 
+    images_dir = structure["train_images"]
+    labels_dir = structure["train_labels"]
+    images_dir.mkdir(parents=True, exist_ok=True)
+    labels_dir.mkdir(parents=True, exist_ok=True)
+
+    existing = sorted(
+        p for p in images_dir.rglob("*")
+        if p.is_file() and p.suffix.upper() in SUPPORTED_EXTS
+        and not p.stem.startswith("bg_")
+    )
+    n = len(existing)
+    if n == 0:
+        raise SystemExit("数据集中没有找到图片。")
+
+    ratio = max(0, min(args.ratio, 49))
+    need = int(round(n * ratio / (100 - ratio)))
+    print(f"原图 {n} 张，背景占比 {ratio}%，需要背景图 {need} 张。")
+
     bg_files = sorted(p for p in bg_dir.rglob("*")
                       if p.is_file() and p.suffix.upper() in SUPPORTED_EXTS)
     if not bg_files:
         raise SystemExit("背景图文件夹中没有找到图片。")
 
-    need = args.train_count + args.val_count
-    if len(bg_files) < need:
-        print(f"背景图只有 {len(bg_files)} 张，少于请求的 {need} 张，将全部使用。")
-        need = len(bg_files)
-
     random.shuffle(bg_files)
-    train_pool = bg_files[:args.train_count]
-    val_pool = bg_files[args.train_count:args.train_count + args.val_count]
+    if len(bg_files) < need:
+        print(f"背景图只有 {len(bg_files)} 张，将通过随机数据增强扩充到 {need} 张。")
 
-    print(f"数据集结构：{'已划分（train/val）' if structure['split'] else '未划分（平铺）'}；"
-          f"目标分辨率 {args.size}；训练集 {len(train_pool)} 张，验证集 {len(val_pool)} 张。")
+    idx = next_bg_index(images_dir)
+    ok = 0
+    fail = 0
+    for i in range(need):
+        src = bg_files[i % len(bg_files)]
+        img = imread_unicode(src)
+        if img is None:
+            print(f"[失败] 无法读取背景图: {src}")
+            fail += 1
+            continue
+        if i >= len(bg_files):
+            img = random_augment(img)
+        resized = resize_to_target(img, args.size)
+        dst = images_dir / f"bg_{idx:03d}{src.suffix.lower() or '.jpg'}"
+        if not imwrite_unicode(dst, resized):
+            print(f"[失败] 保存失败: {dst}")
+            fail += 1
+            continue
+        (labels_dir / f"bg_{idx:03d}.txt").touch()
+        print(f"[背景] {src.name}{'（增强）' if i >= len(bg_files) else ''} "
+              f"-> {dst.name}（空标签已生成）")
+        ok += 1
+        idx += 1
 
-    ok = add_to(train_pool, structure["train_images"], structure["train_labels"],
-                args.size, "train")
-    if val_pool and structure["val_images"] and structure["val_labels"]:
-        ok += add_to(val_pool, structure["val_images"], structure["val_labels"],
-                     args.size, "val")
-    elif val_pool:
-        print("提示：数据集未划分或没有 val 目录，验证集背景图未添加。")
-
-    print(f"\n完成: 成功添加 {ok} 张背景图。")
+    print(f"\n完成: 成功添加 {ok} 张背景图，失败 {fail} 张。")
 
 
 if __name__ == "__main__":
