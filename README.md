@@ -115,7 +115,7 @@ python tools/overexposure.py -i ./images -o ./fixed --strength 50
 python tools/underexposure.py -i ./images -o ./fixed --strength 50
 python tools/augment.py -i ./images -l ./labels -o ./aug --hflip --rot90 --brightness 0.8
 python tools/analysis.py -i ./images -l ./labels -o ./analysis.csv --remove --move
-python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -r 10 -s 1280
+python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -r 10
 ```
 
 ---

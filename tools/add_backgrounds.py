@@ -3,10 +3,10 @@
 
 与前端模块 `QT/modules/background.py` 对应，逻辑保持一致。
 根据「背景占比」自动计算需要添加的背景图数量，背景图不足时用随机数据增强扩充，
-缩放到目标分辨率、复制到 images、生成同名空标签文件。
+保留原始分辨率、复制到 images、生成同名空标签文件。
 
 用法:
-    python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -r 10 -s 1280
+    python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -r 10
 """
 
 import argparse
@@ -33,18 +33,6 @@ def imwrite_unicode(path, img):
         return False
     buf.tofile(str(path))
     return True
-
-
-def resize_to_target(img_bgr, target):
-    h, w = img_bgr.shape[:2]
-    longest = max(h, w)
-    if longest <= 0 or longest == target:
-        return img_bgr
-    scale = target / longest
-    new_w = max(1, int(round(w * scale)))
-    new_h = max(1, int(round(h * scale)))
-    interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
-    return cv2.resize(img_bgr, (new_w, new_h), interpolation=interp)
 
 
 def random_augment(img_bgr):
@@ -113,8 +101,6 @@ def main() -> None:
     parser.add_argument("--dataset", "-d", required=True, help="数据集根目录")
     parser.add_argument("--ratio", "-r", type=int, default=10,
                         help="背景占比（百分比，默认 10，建议 5~10）")
-    parser.add_argument("--size", "-s", type=int, default=1280,
-                        help="目标分辨率，默认 1280")
     args = parser.parse_args()
 
     bg_dir = Path(args.bg).expanduser().resolve()
@@ -164,9 +150,8 @@ def main() -> None:
             continue
         if i >= len(bg_files):
             img = random_augment(img)
-        resized = resize_to_target(img, args.size)
         dst = images_dir / f"bg_{idx:03d}{src.suffix.lower() or '.jpg'}"
-        if not imwrite_unicode(dst, resized):
+        if not imwrite_unicode(dst, img):
             print(f"[失败] 保存失败: {dst}")
             fail += 1
             continue

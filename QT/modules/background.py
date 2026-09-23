@@ -3,7 +3,7 @@
 做法（YOLO 负样本）：
 1. 根据「背景占比」计算需要添加的背景图数量；
 2. 背景图不足时通过随机数据增强（翻转/旋转/亮度/对比度/噪声）扩充；
-3. 缩放到目标分辨率（默认 1280，与现有数据集一致）；
+3. 保留背景图原始分辨率（训练时再统一缩放）；
 4. 复制到数据集 images，命名 bg_001、bg_002…；
 5. 生成同名「空（0 字节）」标签文件到 labels。
 
@@ -38,19 +38,6 @@ def imwrite_unicode(path, img):
         return False
     buf.tofile(str(path))
     return True
-
-
-def resize_to_target(img_bgr, target):
-    """把最长边缩放到 target，保持纵横比。"""
-    h, w = img_bgr.shape[:2]
-    longest = max(h, w)
-    if longest <= 0 or longest == target:
-        return img_bgr
-    scale = target / longest
-    new_w = max(1, int(round(w * scale)))
-    new_h = max(1, int(round(h * scale)))
-    interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
-    return cv2.resize(img_bgr, (new_w, new_h), interpolation=interp)
 
 
 def random_augment(img_bgr):
@@ -118,12 +105,11 @@ class BackgroundWorker(QtCore.QThread):
     progress = Signal(int, int)      # (当前进度, 总数)
     finished = Signal(int, int)      # (成功数, 失败数)
 
-    def __init__(self, bg_dir, dataset_dir, ratio, target_size, parent=None):
+    def __init__(self, bg_dir, dataset_dir, ratio, parent=None):
         super().__init__(parent)
         self.bg_dir = bg_dir
         self.dataset_dir = dataset_dir
         self.ratio = ratio              # 背景占比（百分比，1~49）
-        self.target_size = target_size
 
     def _next_bg_index(self, images_dir):
         """扫描现有 bg_* 文件，返回下一个可用序号。"""
@@ -199,10 +185,9 @@ class BackgroundWorker(QtCore.QThread):
                 continue
             if i >= len(bg_files):
                 img = random_augment(img)  # 扩充部分做随机增强
-            resized = resize_to_target(img, self.target_size)
 
             dst = images_dir / f"bg_{idx:03d}{src.suffix.lower() or '.jpg'}"
-            if not imwrite_unicode(dst, resized):
+            if not imwrite_unicode(dst, img):
                 fail += 1
                 self.log.emit(f"[失败] 保存失败：{dst}")
                 continue
@@ -232,7 +217,7 @@ class BackgroundModule(QtWidgets.QWidget):
 
         hint = QtWidgets.QLabel(
             "把背景图作为负样本加入数据集（降低误检）：按「背景占比」自动计算需添加的数量，\n"
-            "背景图不足时用随机数据增强（翻转/旋转/亮度/对比度/噪声）扩充，缩放到目标分辨率、\n"
+            "背景图不足时用随机数据增强（翻转/旋转/亮度/对比度/噪声）扩充，保留原始分辨率、\n"
             "复制到 images，并生成同名「空（0 字节）」标签文件到 labels。建议占比 5~10%。"
         )
         hint.setWordWrap(True)
@@ -268,12 +253,6 @@ class BackgroundModule(QtWidgets.QWidget):
         self.ratio_spin.setValue(10)
         self.ratio_spin.setToolTip("背景图占整个数据集（原图+背景图）的百分比，建议 5~10%")
         param_row.addWidget(self.ratio_spin)
-        param_row.addSpacing(12)
-        param_row.addWidget(QtWidgets.QLabel("目标分辨率:"))
-        self.size_spin = QtWidgets.QSpinBox()
-        self.size_spin.setRange(64, 8192)
-        self.size_spin.setValue(1280)
-        param_row.addWidget(self.size_spin)
         param_row.addStretch()
         layout.addLayout(param_row)
 
@@ -313,14 +292,12 @@ class BackgroundModule(QtWidgets.QWidget):
         self.bg_edit.setText(cfg.get("bg_dir", ""))
         self.dataset_edit.setText(cfg.get("dataset_dir", ""))
         self.ratio_spin.setValue(int(cfg.get("ratio", 10)))
-        self.size_spin.setValue(int(cfg.get("target_size", 1280)))
 
     def _persist_config(self):
         save_config("background", {
             "bg_dir": self.bg_edit.text().strip(),
             "dataset_dir": self.dataset_edit.text().strip(),
             "ratio": self.ratio_spin.value(),
-            "target_size": self.size_spin.value(),
         })
 
     def _start(self):
@@ -343,7 +320,6 @@ class BackgroundModule(QtWidgets.QWidget):
             bg_dir=bg_dir,
             dataset_dir=dataset_dir,
             ratio=self.ratio_spin.value(),
-            target_size=self.size_spin.value(),
         )
         self._worker.log.connect(self._append_log)
         self._worker.progress.connect(self._on_progress)
