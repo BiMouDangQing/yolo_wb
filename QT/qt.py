@@ -11,6 +11,7 @@ from pathlib import Path
 from qt_binding import QtCore, QtGui, QtWidgets
 from modules.analysis import AnalysisModule
 from modules.augment import AugmentModule
+from modules.background import BackgroundModule
 from modules.converter import ConverterModule
 from modules.dedup import DedupModule
 from modules.label_check import LabelCheckModule
@@ -206,6 +207,7 @@ MODULES = [
     AugmentModule,
     AnalysisModule,
     SplitModule,
+    BackgroundModule,
 ]
 
 

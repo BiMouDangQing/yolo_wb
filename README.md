@@ -8,14 +8,14 @@
 
 ## ✨ 功能特性
 
-程序按推荐处理顺序提供了 12 个标签页：
+程序按推荐处理顺序提供了 13 个标签页：
 
 | # | 功能 | 说明 |
 | --- | --- | --- |
 | 1 | 图片转换 | HEIC/其他格式 → JPG，支持原地转换删除原图 |
 | 2 | 标注转换 | Pascal VOC / LabelImg XML → YOLO txt，并筛选无标注图片 |
 | 3 | 标注质检 | 检测格式错误 / 越界框 / 零负宽高 / 极小框 / 巨框 / 空标签 / 类别 ID 越界 |
-| 4 | 漏标检测 | 用模型找「模型框出来但标签没有」的疑似漏标，支持直接在预览中画框补标注 |
+| 4 | 漏标检测 | 用模型找「模型框出来但标签没有」的疑似漏标，支持在线补框 |
 | 5 | 白平衡 | 灰度世界 / 白斑法 / 完美反射 / 手动增益，统一色温 |
 | 6 | 图片去重 | 感知哈希（dHash）找出重复或高度相似图片 |
 | 7 | 废图筛选 | 检测模糊 / 过暗 / 过曝图片 |
@@ -24,6 +24,7 @@
 | 10 | 数据增强 | 翻转 / 旋转 / 亮度 / 对比度 / 饱和度 / 色调 / 噪声，几何增强可同步变换 YOLO 标签 |
 | 11 | 数据集分析 | 统计各类别框数量、剔除未标注图片、生成分析 CSV |
 | 12 | 数据集切分 | 按比例切分 train / val / test，可生成 data.yaml |
+| 13 | 背景添加 | 背景图作负样本（缩放 + 复制 + 空标签），降低误检 |
 
 所有支持预览的模块都提供「原图 / 结果」翻页预览；所有批量处理功能页均提供进度条，并会记住上次填写的路径与参数。
 
@@ -81,7 +82,8 @@ yolo_data/
 │       ├── underexposure.py# 过暗处理
 │       ├── augment.py      # 数据增强
 │       ├── analysis.py     # 数据集分析
-│       └── split.py        # 数据集切分
+│       ├── split.py        # 数据集切分
+│       └── background.py   # 背景添加（负样本）
 ├── tools/                  # 命令行脚本（独立可运行，不依赖 Qt）
 │   ├── jpg.py / heic2jpg.py# 图片转换
 │   ├── xml2yolo.py         # 标注转换
@@ -89,7 +91,8 @@ yolo_data/
 │   ├── miss_label.py       # 漏标检测
 │   ├── overexposure.py / underexposure.py  # 过曝 / 过暗
 │   ├── augment.py          # 数据增强
-│   └── analysis.py         # 数据集分析
+│   ├── analysis.py         # 数据集分析
+│   └── add_backgrounds.py  # 背景添加（负样本）
 └── md/                     # 使用与结构文档
     ├── QT前端使用说明.md
     ├── YOLO训练图片预处理流程.md
@@ -112,6 +115,7 @@ python tools/overexposure.py -i ./images -o ./fixed --strength 50
 python tools/underexposure.py -i ./images -o ./fixed --strength 50
 python tools/augment.py -i ./images -l ./labels -o ./aug --hflip --rot90 --brightness 0.8
 python tools/analysis.py -i ./images -l ./labels -o ./analysis.csv --remove --move
+python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -n 60 -s 1280
 ```
 
 ---
@@ -129,6 +133,7 @@ python tools/analysis.py -i ./images -l ./labels -o ./analysis.csv --remove --mo
   → 数据增强
   → 数据集分析（统计标注 / 剔除未标注 / 生成 CSV）
   → 数据集切分（train / val / test）
+  → 背景添加（背景负样本，降低误检）
 ```
 
 ---
