@@ -12,6 +12,7 @@ import numpy as np
 
 from config import load as load_config, save as save_config
 from log import write_log
+from modules._history import HistoryBar
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_bgr
@@ -297,6 +298,10 @@ class Xml2YoloModule(QtWidgets.QWidget):
         self.browser = PreviewBrowser(dual=False)
         layout.addWidget(self.browser)
 
+        # 历史配置恢复
+        self.history_bar = HistoryBar("xml2yolo", self._apply_config)
+        layout.addWidget(self.history_bar)
+
         # 进度条
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -340,7 +345,9 @@ class Xml2YoloModule(QtWidgets.QWidget):
 
     def _restore_config(self):
         """恢复上次保存的路径与参数。"""
-        cfg = load_config("xml2yolo")
+        self._apply_config(load_config("xml2yolo"))
+
+    def _apply_config(self, cfg):
         self.images_edit.setText(cfg.get("images_dir", ""))
         self.xml_edit.setText(cfg.get("xml_dir", ""))
         self.labels_edit.setText(cfg.get("labels_dir", ""))

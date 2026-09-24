@@ -18,6 +18,7 @@ from pathlib import Path
 
 from config import load as load_config, save as save_config
 from log import write_log
+from modules._history import HistoryBar
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 # 检测项：key -> 显示名
@@ -337,6 +338,10 @@ class LabelCheckModule(QtWidgets.QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table, 1)
 
+        # 历史配置恢复
+        self.history_bar = HistoryBar("label_check", self._apply_config)
+        layout.addWidget(self.history_bar)
+
         # 进度条
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -373,7 +378,9 @@ class LabelCheckModule(QtWidgets.QWidget):
 
     def _restore_config(self):
         """恢复上次保存的路径与参数。"""
-        cfg = load_config("label_check")
+        self._apply_config(load_config("label_check"))
+
+    def _apply_config(self, cfg):
         self.labels_edit.setText(cfg.get("labels_dir", ""))
         self.csv_edit.setText(cfg.get("csv_path", ""))
         self.nc_spin.setValue(int(cfg.get("nc", 0)))

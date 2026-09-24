@@ -17,6 +17,7 @@ from pathlib import Path
 
 from config import load as load_config, save as save_config
 from log import write_log
+from modules._history import HistoryBar
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 SUPPORTED_EXTS = {
@@ -266,6 +267,10 @@ class RenameModule(QtWidgets.QWidget):
         opt_row.addStretch()
         layout.addLayout(opt_row)
 
+        # 历史配置恢复
+        self.history_bar = HistoryBar("rename", self._apply_config)
+        layout.addWidget(self.history_bar)
+
         # 进度条
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -314,7 +319,9 @@ class RenameModule(QtWidgets.QWidget):
                 w.setEnabled(not inplace)
 
     def _restore_config(self):
-        cfg = load_config("rename")
+        self._apply_config(load_config("rename"))
+
+    def _apply_config(self, cfg):
         self.images_edit.setText(cfg.get("images_dir", ""))
         self.out_edit.setText(cfg.get("output_dir", ""))
         self.labels_edit.setText(cfg.get("labels_dir", ""))

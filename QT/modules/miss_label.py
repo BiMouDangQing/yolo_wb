@@ -17,6 +17,7 @@ import numpy as np
 
 from config import load as load_config, save as save_config
 from log import write_log
+from modules._history import HistoryBar
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._annotation import AnnotationCanvas
@@ -353,6 +354,10 @@ class MissLabelModule(QtWidgets.QWidget):
         self.annotate_btn.clicked.connect(self._enter_annotate)
         layout.addWidget(self.annotate_btn)
 
+        # 历史配置恢复
+        self.history_bar = HistoryBar("miss_label", self._apply_config)
+        layout.addWidget(self.history_bar)
+
         # 进度条
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -400,7 +405,9 @@ class MissLabelModule(QtWidgets.QWidget):
             self.csv_edit.setText(path)
 
     def _restore_config(self):
-        cfg = load_config("miss_label")
+        self._apply_config(load_config("miss_label"))
+
+    def _apply_config(self, cfg):
         self.model_edit.setText(cfg.get("model_path", ""))
         self.images_edit.setText(cfg.get("images_dir", ""))
         self.labels_edit.setText(cfg.get("labels_dir", ""))

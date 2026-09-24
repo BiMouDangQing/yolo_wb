@@ -10,6 +10,7 @@ from PIL import Image, ImageOps
 
 from config import load as load_config, save as save_config
 from log import write_log
+from modules._history import HistoryBar
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_rgb
@@ -197,6 +198,10 @@ class ConverterModule(QtWidgets.QWidget):
         self.browser = PreviewBrowser(dual=True)
         layout.addWidget(self.browser)
 
+        # 历史配置恢复
+        self.history_bar = HistoryBar("converter", self._apply_config)
+        layout.addWidget(self.history_bar)
+
         # 进度条
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -246,7 +251,9 @@ class ConverterModule(QtWidgets.QWidget):
 
     def _restore_config(self):
         """恢复上次保存的路径与参数。"""
-        cfg = load_config("converter")
+        self._apply_config(load_config("converter"))
+
+    def _apply_config(self, cfg):
         self.input_edit.setText(cfg.get("input_path", ""))
         self.output_edit.setText(cfg.get("output_dir", ""))
         self.quality_spin.setValue(int(cfg.get("quality", 95)))

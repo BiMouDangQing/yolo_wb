@@ -13,6 +13,7 @@ from PIL import Image, ImageOps
 
 from config import load as load_config, save as save_config
 from log import write_log
+from modules._history import HistoryBar
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_rgb
@@ -187,6 +188,10 @@ class DedupModule(QtWidgets.QWidget):
         self.browser = PreviewBrowser(dual=True)
         layout.addWidget(self.browser)
 
+        # 历史配置恢复
+        self.history_bar = HistoryBar("dedup", self._apply_config)
+        layout.addWidget(self.history_bar)
+
         # 进度条
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -215,7 +220,9 @@ class DedupModule(QtWidgets.QWidget):
 
     def _restore_config(self):
         """恢复上次保存的路径与参数。"""
-        cfg = load_config("dedup")
+        self._apply_config(load_config("dedup"))
+
+    def _apply_config(self, cfg):
         self.input_edit.setText(cfg.get("input_path", ""))
         self.threshold_spin.setValue(int(cfg.get("threshold", 5)))
         action = cfg.get("action", "report")

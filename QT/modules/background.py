@@ -18,6 +18,7 @@ import numpy as np
 
 from config import load as load_config, save as save_config
 from log import write_log
+from modules._history import HistoryBar
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 SUPPORTED_EXTS = {
@@ -257,6 +258,10 @@ class BackgroundModule(QtWidgets.QWidget):
         param_row.addStretch()
         layout.addLayout(param_row)
 
+        # 历史配置恢复
+        self.history_bar = HistoryBar("background", self._apply_config)
+        layout.addWidget(self.history_bar)
+
         # 进度条
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -289,7 +294,9 @@ class BackgroundModule(QtWidgets.QWidget):
             self.dataset_edit.setText(path)
 
     def _restore_config(self):
-        cfg = load_config("background")
+        self._apply_config(load_config("background"))
+
+    def _apply_config(self, cfg):
         self.bg_edit.setText(cfg.get("bg_dir", ""))
         self.dataset_edit.setText(cfg.get("dataset_dir", ""))
         self.ratio_spin.setValue(int(cfg.get("ratio", 10)))

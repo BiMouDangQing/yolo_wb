@@ -15,6 +15,7 @@ import numpy as np
 
 from config import load as load_config, save as save_config
 from log import write_log
+from modules._history import HistoryBar
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_bgr
@@ -200,6 +201,10 @@ class QualityModule(QtWidgets.QWidget):
         self.browser = PreviewBrowser(dual=False)
         layout.addWidget(self.browser)
 
+        # 历史配置恢复
+        self.history_bar = HistoryBar("quality", self._apply_config)
+        layout.addWidget(self.history_bar)
+
         # 进度条
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -228,7 +233,9 @@ class QualityModule(QtWidgets.QWidget):
 
     def _restore_config(self):
         """恢复上次保存的路径与参数。"""
-        cfg = load_config("quality")
+        self._apply_config(load_config("quality"))
+
+    def _apply_config(self, cfg):
         self.input_edit.setText(cfg.get("input_path", ""))
         self.blur_spin.setValue(int(cfg.get("blur_th", 100)))
         self.dark_spin.setValue(int(cfg.get("dark_th", 15)))

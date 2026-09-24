@@ -8,6 +8,7 @@ from pathlib import Path
 
 from config import load as load_config, save as save_config
 from log import write_log
+from modules._history import HistoryBar
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_bgr
@@ -193,6 +194,10 @@ class OverexposureModule(QtWidgets.QWidget):
         self.browser = PreviewBrowser(dual=True)
         layout.addWidget(self.browser, 1)
 
+        # 历史配置恢复
+        self.history_bar = HistoryBar("overexposure", self._apply_config)
+        layout.addWidget(self.history_bar)
+
         # 进度条
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -220,7 +225,9 @@ class OverexposureModule(QtWidgets.QWidget):
 
     def _restore_config(self):
         """恢复上次保存的路径与参数。"""
-        cfg = load_config("overexposure")
+        self._apply_config(load_config("overexposure"))
+
+    def _apply_config(self, cfg):
         self.input_edit.setText(cfg.get("input_path", ""))
         self.output_edit.setText(cfg.get("output_dir", ""))
         self.strength_slider.setValue(int(cfg.get("strength", 50)))
