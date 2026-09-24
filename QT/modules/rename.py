@@ -52,13 +52,13 @@ class RenameWorker(QtCore.QThread):
     finished = Signal(int, int)      # (成功数, 失败数)
 
     def __init__(self, images_dir, labels_dir, output_dir, inplace,
-                 start, width, prefix, sort_by, sync_labels, parent=None):
+                 start_seq, width, prefix, sort_by, sync_labels, parent=None):
         super().__init__(parent)
         self.images_dir = images_dir
         self.labels_dir = labels_dir          # 为空时自动检测
         self.output_dir = output_dir
         self.inplace = inplace                # True=原地重命名，False=复制到新文件夹
-        self.start = start
+        self.start_seq = start_seq            # 起始序号（不叫 start，避免覆盖 QThread.start 方法）
         self.width = width
         self.prefix = prefix
         self.sort_by = sort_by                # name / mtime
@@ -110,7 +110,7 @@ class RenameWorker(QtCore.QThread):
             if labels is not None:
                 self.log.emit(f"同步标签目录：{labels}")
 
-        self.log.emit(f"共 {len(files)} 张图片，起始序号 {self.start}，"
+        self.log.emit(f"共 {len(files)} 张图片，起始序号 {self.start_seq}，"
                       f"补零 {self.width} 位，前缀 {self.prefix or '（无）'}，"
                       f"方式：{'原地重命名' if self.inplace else '复制到新文件夹'}。")
 
@@ -125,7 +125,7 @@ class RenameWorker(QtCore.QThread):
         total = len(files)
         for i, src in enumerate(files):
             self.progress.emit(i + 1, total)
-            seq = self.start + i
+            seq = self.start_seq + i
             new_stem = self._new_name(seq)
             ext = src.suffix.lower() or ".jpg"
 
@@ -361,7 +361,7 @@ class RenameModule(QtWidgets.QWidget):
             labels_dir=self.labels_edit.text().strip(),
             output_dir=output_dir,
             inplace=inplace,
-            start=self.start_spin.value(),
+            start_seq=self.start_spin.value(),
             width=self.width_spin.value(),
             prefix=self.prefix_edit.text().strip(),
             sort_by=self.sort_combo.currentData(),
