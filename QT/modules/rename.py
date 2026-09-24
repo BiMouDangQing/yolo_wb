@@ -255,8 +255,8 @@ class RenameModule(QtWidgets.QWidget):
         opt_row = QtWidgets.QHBoxLayout()
         opt_row.addWidget(QtWidgets.QLabel("排序方式:"))
         self.sort_combo = QtWidgets.QComboBox()
-        self.sort_combo.addItem("文件名（自然排序）", "name")
         self.sort_combo.addItem("修改时间", "mtime")
+        self.sort_combo.addItem("文件名（自然排序）", "name")
         opt_row.addWidget(self.sort_combo)
         opt_row.addSpacing(16)
         self.sync_check = QtWidgets.QCheckBox("同步重命名同名标签（.txt）")
@@ -321,7 +321,7 @@ class RenameModule(QtWidgets.QWidget):
         self.start_spin.setValue(int(cfg.get("start", 1)))
         self.width_spin.setValue(int(cfg.get("width", 4)))
         self.prefix_edit.setText(cfg.get("prefix", ""))
-        idx = self.sort_combo.findData(cfg.get("sort_by", "name"))
+        idx = self.sort_combo.findData(cfg.get("sort_by", "mtime"))
         self.sort_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.sync_check.setChecked(bool(cfg.get("sync_labels", True)))
 

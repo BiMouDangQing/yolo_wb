@@ -46,8 +46,8 @@ def main() -> None:
     parser.add_argument("--start", type=int, default=1, help="起始序号，默认 1")
     parser.add_argument("--width", type=int, default=4, help="补零位数，默认 4")
     parser.add_argument("--prefix", default="", help="前缀，默认空")
-    parser.add_argument("--sort", choices=["name", "mtime"], default="name",
-                        help="排序方式：name=文件名自然排序，mtime=修改时间")
+    parser.add_argument("--sort", choices=["name", "mtime"], default="mtime",
+                        help="排序方式：mtime=修改时间（默认），name=文件名自然排序")
     parser.add_argument("--no-labels", action="store_true", help="不同步重命名标签")
     args = parser.parse_args()
 
