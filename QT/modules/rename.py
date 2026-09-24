@@ -16,6 +16,7 @@ import shutil
 from pathlib import Path
 
 from config import load as load_config, save as save_config
+from log import write_log
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 SUPPORTED_EXTS = {
@@ -374,6 +375,7 @@ class RenameModule(QtWidgets.QWidget):
 
     def _append_log(self, text):
         self.log_view.appendPlainText(text)
+        write_log(self.MODULE_TITLE, text)
 
     def _on_progress(self, current, total):
         self.progress_bar.setMaximum(total)

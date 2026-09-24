@@ -8,6 +8,11 @@
 import sys
 from pathlib import Path
 
+# 把项目根目录加入 sys.path，使 modules 内部对 config / log 包的 import 生效
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 from qt_binding import QtCore, QtGui, QtWidgets
 from modules.analysis import AnalysisModule
 from modules.augment import AugmentModule

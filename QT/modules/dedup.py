@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from config import load as load_config, save as save_config
+from log import write_log
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 from modules._preview import PreviewBrowser, make_thumb_rgb
@@ -272,6 +273,7 @@ class DedupModule(QtWidgets.QWidget):
 
     def _append_log(self, text):
         self.log_view.appendPlainText(text)
+        write_log(self.MODULE_TITLE, text)
 
     def _on_previews(self, items, labels):
         self.browser.set_data(items, labels)

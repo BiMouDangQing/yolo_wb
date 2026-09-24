@@ -14,7 +14,11 @@ env/
 .idea/
 
 # 运行时配置记忆（本地路径，不纳入版本库）
-QT/config.json
+config/config.json
+config/history/
+
+# 运行日志（本地文件，不纳入版本库）
+log/*.log
 
 # 模型权重（大文件，不纳入版本库）
 *.pt
