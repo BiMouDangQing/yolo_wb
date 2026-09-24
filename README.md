@@ -8,7 +8,7 @@
 
 ## ✨ 功能特性
 
-程序按推荐处理顺序提供了 13 个标签页：
+程序按推荐处理顺序提供了 14 个标签页：
 
 | # | 功能 | 说明 |
 | --- | --- | --- |
@@ -25,6 +25,7 @@
 | 11 | 数据集分析 | 统计各类别框数量、剔除未标注图片、生成分析 CSV |
 | 12 | 数据集切分 | 按比例切分 train / val / test，可生成 data.yaml |
 | 13 | 背景添加 | 背景图作负样本（按占比自动计算数量 + 随机增强扩充 + 空标签），降低误检 |
+| 14 | 图片重命名 | 按序号从指定起点连续重命名图片（可同步重命名同名 YOLO 标签） |
 
 所有支持预览的模块都提供「原图 / 结果」翻页预览；所有批量处理功能页均提供进度条，并会记住上次填写的路径与参数。
 
@@ -83,7 +84,8 @@ yolo_data/
 │       ├── augment.py      # 数据增强
 │       ├── analysis.py     # 数据集分析
 │       ├── split.py        # 数据集切分
-│       └── background.py   # 背景添加（负样本）
+│       ├── background.py   # 背景添加（负样本）
+│       └── rename.py       # 图片重命名（按序号连续命名）
 ├── tools/                  # 命令行脚本（独立可运行，不依赖 Qt）
 │   ├── jpg.py / heic2jpg.py# 图片转换
 │   ├── xml2yolo.py         # 标注转换
@@ -92,7 +94,8 @@ yolo_data/
 │   ├── overexposure.py / underexposure.py  # 过曝 / 过暗
 │   ├── augment.py          # 数据增强
 │   ├── analysis.py         # 数据集分析
-│   └── add_backgrounds.py  # 背景添加（负样本）
+│   ├── add_backgrounds.py  # 背景添加（负样本）
+│   └── rename.py           # 图片重命名（按序号连续命名）
 └── md/                     # 使用与结构文档
     ├── QT前端使用说明.md
     ├── YOLO训练图片预处理流程.md
@@ -116,6 +119,7 @@ python tools/underexposure.py -i ./images -o ./fixed --strength 50
 python tools/augment.py -i ./images -l ./labels -o ./aug --hflip --rot90 --brightness 0.8
 python tools/analysis.py -i ./images -l ./labels -o ./analysis.csv --remove --move
 python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -r 10
+python tools/rename.py -i ./images -o ./renamed --start 1 --width 4 --prefix img_
 ```
 
 ---
@@ -134,6 +138,7 @@ python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -r 10
   → 数据集分析（统计标注 / 剔除未标注 / 生成 CSV）
   → 数据集切分（train / val / test）
   → 背景添加（背景负样本，降低误检）
+  → 图片重命名（按序号统一命名）
 ```
 
 ---

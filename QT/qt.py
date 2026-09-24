@@ -18,6 +18,7 @@ from modules.label_check import LabelCheckModule
 from modules.miss_label import MissLabelModule
 from modules.overexposure import OverexposureModule
 from modules.quality import QualityModule
+from modules.rename import RenameModule
 from modules.split import SplitModule
 from modules.underexposure import UnderexposureModule
 from modules.white_balance import WhiteBalanceModule
@@ -208,6 +209,7 @@ MODULES = [
     AnalysisModule,
     SplitModule,
     BackgroundModule,
+    RenameModule,
 ]
 
 

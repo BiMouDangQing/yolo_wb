@@ -121,6 +121,8 @@ python qt.py
 | 图片去重 | `QT/modules/dedup.py` | 找重复/相似图 | 汉明距离阈值（越小越严格） |
 | 废图筛选 | `QT/modules/quality.py` | 剔除模糊/过暗/过曝图 | 模糊阈值、过暗阈值、过曝比例 |
 | 数据集切分 | `QT/modules/split.py` | 切分 train/val/test | 比例、labels 目录、随机种子 |
+| 背景添加 | `QT/modules/background.py` | 背景图作负样本，降低误检 | 背景占比 |
+| 图片重命名 | `QT/modules/rename.py` | 按序号连续重命名图片（可同步标签） | 起始序号、补零位数、前缀 |
 | 模型管理 | `QT/modules/model_manager.py` | 导入/管理 .pt 模型 | — |
 | 模型预测 | `QT/modules/predictor.py` | 单图/文件夹推理 | 模型、置信度阈值 |
 
