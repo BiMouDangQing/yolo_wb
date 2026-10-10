@@ -9,7 +9,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 from config import load as load_config, save as save_config
-from log import write_log
+from logs import write_log
 from modules._history import HistoryBar
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
 

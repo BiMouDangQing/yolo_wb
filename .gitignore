@@ -17,8 +17,9 @@ env/
 config/config.json
 config/history/
 
-# 运行日志（本地文件，不纳入版本库）
-log/*.log
+# 运行日志（本地文件，不纳入版本库；保留包代码 __init__.py）
+logs/*
+!logs/__init__.py
 
 # 模型权重（大文件，不纳入版本库）
 *.pt

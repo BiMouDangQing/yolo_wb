@@ -15,6 +15,7 @@ if str(_ROOT) not in sys.path:
 
 from qt_binding import QtCore, QtGui, QtWidgets
 from modules.analysis import AnalysisModule
+from modules.assemble import AssembleModule
 from modules.augment import AugmentModule
 from modules.background import BackgroundModule
 from modules.converter import ConverterModule
@@ -215,6 +216,7 @@ MODULES = [
     SplitModule,
     BackgroundModule,
     RenameModule,
+    AssembleModule,
 ]
 
 
