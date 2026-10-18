@@ -42,6 +42,7 @@ YOLO txt 格式（每行一个框，坐标归一化到 0-1）:
 
 import argparse
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -156,6 +157,11 @@ def to_yolo_line(name, xmin, ymin, xmax, ymax, width, height, class_map):
     return f"{cls} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}"
 
 
+def _natural_key(name):
+    """自然排序键：把数字段转成整数，使 2-xxx 排在 10-xxx 之前。"""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
+
+
 def resolve_classes(records, classes_arg):
     """确定类别映射 {name: id}；支持逗号分隔 / classes.txt 文件 / 自动收集。"""
     if classes_arg:
@@ -166,12 +172,13 @@ def resolve_classes(records, classes_arg):
             names = [x.strip() for x in classes_arg.split(",") if x.strip()]
         return {name: i for i, name in enumerate(names)}
 
-    # 自动收集：按 JSON 中首次出现顺序
+    # 自动收集：按类别名自然排序，保证 class_id 稳定、可预期（而非依赖文件首次出现顺序）
     names = []
     for _, _, _, _, boxes in records:
         for name, *_ in boxes:
             if name and name not in names:
                 names.append(name)
+    names.sort(key=_natural_key)
     return {name: i for i, name in enumerate(names)}
 
 
