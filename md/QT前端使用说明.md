@@ -41,6 +41,7 @@ python qt.py
 | 16 | 标签统一 | `QT/modules/label_unify.py` | 把所有框的类别 ID 统一改成指定类别 |
 | 17 | 标签映射 | `QT/modules/label_remap.py` | 把类别 A 的框改成类别 B（可填名称或 ID） |
 | 18 | 类别重命名 | `QT/modules/label_rename.py` | 把类别名称 A 改成 B（只改 classes.txt） |
+| 19 | 类别合并 | `QT/modules/label_merge.py` | 把类别 C 合并到 B，框 id 重排 |
 
 ---
 
@@ -222,6 +223,15 @@ python qt.py
 - 只改 `classes.txt` 里的类别名；框的 class_id 保持不变（A 的位置不变），「名称 → id」绑定关系自动更新。
 - 选好 labels 目录后会自动把现有类别名加载到下拉框供选择。
 - 冲突保护：若 B 已存在会拦截，避免两个类别同名。
+
+### 3.18 类别合并
+
+把类别 C 合并到类别 B（如 `1-LightBruise → apple`），id 完整重新绑定。
+
+- labels 目录（必填，需含 `classes.txt`）、源类别 C、目标类别 B。
+- 过程：把 C 的框的 class_id 改成 B 的 id，从 `classes.txt` 删除 C，C 之后所有类别的 id 自动前移，并同步更新所有框的 txt。
+- 选好 labels 目录后会自动加载类别名到下拉框。
+- 适合「把多个细分类别归并成一个」的场景。
 
 ---
 
