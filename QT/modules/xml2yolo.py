@@ -53,7 +53,7 @@ class Xml2YoloWorker(QtCore.QThread):
     finished = Signal(int, int, int)  # (转换数, 失败数, 无标注数)
 
     def __init__(self, images_dir, xml_dir, labels_dir, unlabeled_dir,
-                 classes, move_unlabeled, no_unlabeled, parent=None):
+                 classes, move_unlabeled, no_unlabeled, format="xml", parent=None):
         super().__init__(parent)
         self.images_dir = images_dir
         self.xml_dir = xml_dir
@@ -62,11 +62,20 @@ class Xml2YoloWorker(QtCore.QThread):
         self.classes = classes
         self.move_unlabeled = move_unlabeled
         self.no_unlabeled = no_unlabeled
+        self.format = format
 
     def run(self):
-        mod = _load_tools_module("xml2yolo")
+        if self.format == "isat":
+            mod = _load_tools_module("isat2yolo")
+            ext = ".JSON"
+            fmt_name = "ISAT JSON"
+            parse_fn = mod.parse_isat
+        else:
+            mod = _load_tools_module("xml2yolo")
+            ext = ".XML"
+            fmt_name = "XML"
+            parse_fn = mod.parse_xml
         supported = mod.SUPPORTED_EXTS
-        parse_xml = mod.parse_xml
         read_image_size = mod.read_image_size
         to_yolo_line = mod.to_yolo_line
         resolve_classes = mod.resolve_classes
@@ -79,7 +88,7 @@ class Xml2YoloWorker(QtCore.QThread):
 
         xml_dir = Path(self.xml_dir).expanduser() if self.xml_dir else images_dir
         if not xml_dir.is_dir():
-            self.log.emit(f"XML 目录不存在：{xml_dir}")
+            self.log.emit(f"{fmt_name} 目录不存在：{xml_dir}")
             self.finished.emit(0, 0, 0)
             return
 
@@ -94,22 +103,22 @@ class Xml2YoloWorker(QtCore.QThread):
             self.finished.emit(0, 0, 0)
             return
 
-        # 收集并解析 XML
+        # 收集并解析标注文件
         xml_files = sorted(
             p for p in xml_dir.rglob("*")
-            if p.is_file() and p.suffix.upper() == ".XML"
+            if p.is_file() and p.suffix.upper() == ext
         )
         if not xml_files:
-            self.log.emit("没有找到 XML 标注文件。")
+            self.log.emit(f"没有找到 {fmt_name} 标注文件。")
             self.finished.emit(0, 0, 0)
             return
 
         records = []
         for xml_path in xml_files:
             try:
-                records.append((xml_path, *parse_xml(xml_path)))
+                records.append((xml_path, *parse_fn(xml_path)))
             except Exception as exc:  # noqa: BLE001
-                self.log.emit(f"[跳过] XML 解析失败 {xml_path}：{exc}")
+                self.log.emit(f"[跳过] {fmt_name} 解析失败 {xml_path}：{exc}")
 
         class_map = resolve_classes(records, self.classes)
 
@@ -224,11 +233,22 @@ class Xml2YoloModule(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
 
         hint = QtWidgets.QLabel(
-            "把 Pascal VOC / LabelImg 的 XML 标注转成 YOLO txt，\n"
+            "把 Pascal VOC / LabelImg 的 XML 标注，或 ISAT 的 JSON 标注转成 YOLO txt，\n"
             "并筛选出没有标注的图片到单独文件夹。"
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)
+
+        # 标注格式
+        fmt_row = QtWidgets.QHBoxLayout()
+        fmt_row.addWidget(QtWidgets.QLabel("标注格式:"))
+        self.format_combo = QtWidgets.QComboBox()
+        self.format_combo.addItem("Pascal VOC (XML)", "xml")
+        self.format_combo.addItem("ISAT (JSON)", "isat")
+        self.format_combo.currentIndexChanged.connect(self._on_format_changed)
+        fmt_row.addWidget(self.format_combo)
+        fmt_row.addStretch()
+        layout.addLayout(fmt_row)
 
         # images 目录
         img_row = QtWidgets.QHBoxLayout()
@@ -241,9 +261,10 @@ class Xml2YoloModule(QtWidgets.QWidget):
         img_row.addWidget(img_btn)
         layout.addLayout(img_row)
 
-        # xml 目录
+        # 标注目录（XML 或 ISAT JSON）
         xml_row = QtWidgets.QHBoxLayout()
-        xml_row.addWidget(QtWidgets.QLabel("xml 目录:"))
+        self.xml_label = QtWidgets.QLabel("xml 目录:")
+        xml_row.addWidget(self.xml_label)
         self.xml_edit = QtWidgets.QLineEdit()
         self.xml_edit.setPlaceholderText("留空表示与图片同目录")
         xml_row.addWidget(self.xml_edit, 1)
@@ -323,6 +344,15 @@ class Xml2YoloModule(QtWidgets.QWidget):
         self.log_view.setFont(font)
         layout.addWidget(self.log_view)
 
+    def _on_format_changed(self):
+        is_isat = self.format_combo.currentData() == "isat"
+        if is_isat:
+            self.xml_label.setText("ISAT JSON 目录:")
+            self.xml_edit.setPlaceholderText("ISAT JSON 标注目录（留空表示与图片同目录）")
+        else:
+            self.xml_label.setText("xml 目录:")
+            self.xml_edit.setPlaceholderText("留空表示与图片同目录")
+
     def _pick_images(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择 images 目录")
         if path:
@@ -348,6 +378,10 @@ class Xml2YoloModule(QtWidgets.QWidget):
         self._apply_config(load_config("xml2yolo"))
 
     def _apply_config(self, cfg):
+        fmt = cfg.get("format", "xml")
+        fidx = self.format_combo.findData(fmt)
+        if fidx >= 0:
+            self.format_combo.setCurrentIndex(fidx)
         self.images_edit.setText(cfg.get("images_dir", ""))
         self.xml_edit.setText(cfg.get("xml_dir", ""))
         self.labels_edit.setText(cfg.get("labels_dir", ""))
@@ -369,6 +403,7 @@ class Xml2YoloModule(QtWidgets.QWidget):
             "classes": self.classes_edit.text().strip(),
             "move": self.move_combo.currentData(),
             "no_unlabeled": self.no_unl_check.isChecked(),
+            "format": self.format_combo.currentData(),
         })
 
     def _start(self):
@@ -388,6 +423,7 @@ class Xml2YoloModule(QtWidgets.QWidget):
         self._worker = Xml2YoloWorker(
             images_dir=images_dir,
             xml_dir=self.xml_edit.text().strip(),
+            format=self.format_combo.currentData(),
             labels_dir=self.labels_edit.text().strip(),
             unlabeled_dir=self.unlabeled_edit.text().strip(),
             classes=self.classes_edit.text().strip(),
