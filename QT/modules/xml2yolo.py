@@ -44,6 +44,22 @@ def draw_boxes(img_bgr, boxes):
     return out
 
 
+def draw_segments(img_bgr, segments):
+    """在 BGR 图上画出分割多边形，用于验证转换。
+
+    segments 为 [(name, points), ...]，points 为像素坐标 [x1,y1,x2,y2,...]。
+    """
+    out = img_bgr.copy()
+    for name, points in segments:
+        pts = []
+        for i in range(0, len(points), 2):
+            pts.append((int(points[i]), int(points[i + 1])))
+        if len(pts) >= 3:
+            arr = np.array(pts, dtype=np.int32).reshape(-1, 1, 2)
+            cv2.polylines(out, [arr], True, (0, 255, 0), 2)
+    return out
+
+
 class Xml2YoloWorker(QtCore.QThread):
     """后台执行 XML 转 YOLO 与无标注筛选。"""
 
@@ -186,7 +202,7 @@ class Xml2YoloWorker(QtCore.QThread):
                 try:
                     img = imread_unicode(img_path)
                     if img is not None:
-                        annotated = draw_boxes(img, boxes)
+                        annotated = draw_segments(img, boxes) if is_seg else draw_boxes(img, boxes)
                         thumbs.append(make_thumb_bgr(annotated))
                         thumb_labels.append(f"{xml_path.name}（{len(lines)} 个框）")
                 except Exception as exc:  # noqa: BLE001
