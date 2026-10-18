@@ -120,6 +120,34 @@ def _natural_key(name):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
 
 
+def parse_xml_seg(path: Path):
+    """解析单个 XML，返回 (filename, width, height, [(name, points), ...])。
+
+    XML 只有矩形框（bndbox），没有多边形，因此把每个 bbox 转成矩形多边形
+    [x1,y1,x2,y1,x2,y2,x1,y2]，用于输出 YOLO-seg 格式。
+    """
+    filename, width, height, boxes = parse_xml(path)
+    objects = [
+        (name, [xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax])
+        for name, xmin, ymin, xmax, ymax in boxes
+    ]
+    return filename, width, height, objects
+
+
+def to_yolo_seg_line(name, points, width, height, class_map):
+    """把一个多边形转成 YOLO-seg 行（class x1 y1 x2 y2 ...）；类别不在映射中返回 None。"""
+    cls = class_map.get(name)
+    if cls is None:
+        return None
+    norm = []
+    for i in range(0, len(points), 2):
+        x = max(0.0, min(1.0, points[i] / width))
+        y = max(0.0, min(1.0, points[i + 1] / height))
+        norm.append(f"{x:.6f}")
+        norm.append(f"{y:.6f}")
+    return " ".join([str(cls)] + norm)
+
+
 def resolve_classes(records, classes_arg):
     """确定类别映射 {name: id}；支持逗号分隔 / classes.txt 文件 / 自动收集。"""
     if classes_arg:
@@ -149,6 +177,8 @@ def main() -> None:
     parser.add_argument("--classes", "-c", default=CLASSES, help="类别：逗号分隔或 classes.txt 路径；留空自动收集")
     parser.add_argument("--move", action="store_true", default=MOVE_UNLABELED, help="移动无标注图片（默认复制）")
     parser.add_argument("--no-unlabeled", action="store_true", default=NO_UNLABELED, help="不筛选无标注图片")
+    parser.add_argument("--out-format", choices=["detect", "seg"], default="detect",
+                        help="输出格式：detect=检测框(class cx cy w h)，seg=分割多边形(class x1 y1 x2 y2 ...)")
     args = parser.parse_args()
 
     images_dir = Path(args.images).expanduser().resolve()
@@ -177,10 +207,12 @@ def main() -> None:
         raise SystemExit("没有找到 XML 标注文件。")
 
     # 3. 解析所有 XML
+    is_seg = args.out_format == "seg"
+    parse_fn = parse_xml_seg if is_seg else parse_xml
     records = []
     for xml_path in xml_files:
         try:
-            records.append((xml_path, *parse_xml(xml_path)))
+            records.append((xml_path, *parse_fn(xml_path)))
         except ET.ParseError as exc:
             print(f"[跳过] XML 解析失败 {xml_path}: {exc}")
 
@@ -210,8 +242,13 @@ def main() -> None:
             continue
 
         lines = []
-        for name, xmin, ymin, xmax, ymax in boxes:
-            line = to_yolo_line(name, xmin, ymin, xmax, ymax, width, height, class_map)
+        for item in boxes:
+            if is_seg:
+                name, points = item
+                line = to_yolo_seg_line(name, points, width, height, class_map)
+            else:
+                name, xmin, ymin, xmax, ymax = item
+                line = to_yolo_line(name, xmin, ymin, xmax, ymax, width, height, class_map)
             if line is not None:
                 lines.append(line)
             else:

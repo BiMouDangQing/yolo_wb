@@ -64,8 +64,12 @@ python qt.py
 把 Pascal VOC / LabelImg 的 XML 标注，或 ISAT 的 JSON 标注转成 YOLO 格式 txt：
 
 - **标注格式**：下拉选择「Pascal VOC (XML)」或「ISAT (JSON)」，切换后标注目录的输入提示会自动变化。
+- **输出格式**：
+  - `YOLO 检测（框）`：每行 `class cx cy w h`；
+  - `YOLO 分割（多边形）`：每行 `class x1 y1 x2 y2 ...`（归一化多边形顶点，用于 yolov8-seg 等分割训练）。
 - images 目录（必填）、标注目录（xml / ISAT JSON，留空=与图片同目录）、labels 目录（留空=写到标注文件旁边）。
-- ISAT JSON 说明：每个图片对应一个同名 `.json`，内含 `info.name`（图片名）、`info.width/height`（尺寸）、`objects[].category`（类别）、`objects[].bbox`（`[x, y, w, h]` 外接框）。
+- ISAT JSON 说明：每个图片对应一个同名 `.json`，内含 `info.name`（图片名）、`info.width/height`（尺寸）、`objects[].category`（类别）、`objects[].segmentation`（多边形顶点）、`objects[].bbox`（`[x, y, w, h]` 外接框）。
+- **分割格式说明**：ISAT 自带 `segmentation` 多边形，直接转成 YOLO-seg 顶点；XML 只有矩形框（bndbox），转分割格式时会把矩形转成 4 顶点矩形多边形。
 - 无标注输出目录（留空= images 同级下的 `unlabeled`），可选「复制 / 移动」，也可跳过筛选。
 - 类别 classes：留空自动收集；或填 `"durian,background"`（逗号分隔，顺序即 class_id）；或填 `classes.txt` 路径。
 - 转换完成后自动生成 `classes.txt`。

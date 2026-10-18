@@ -157,6 +157,74 @@ def to_yolo_line(name, xmin, ymin, xmax, ymax, width, height, class_map):
     return f"{cls} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}"
 
 
+def _seg_points(seg):
+    """把 segmentation 展平成 [x1, y1, x2, y2, ...] 像素坐标列表；失败返回 None。"""
+    nums = _flatten_numbers(seg)
+    if len(nums) < 4 or len(nums) % 2 != 0:
+        return None
+    return nums
+
+
+def parse_isat_seg(path: Path):
+    """解析单个 ISAT JSON，返回 (filename, width, height, [(name, points), ...])。
+
+    points 为 [x1, y1, x2, y2, ...]（像素坐标多边形顶点）。
+    优先用 segmentation；缺失时用 bbox 转成矩形多边形。
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+
+    info = data.get("info") or {}
+    filename = (info.get("name") or "").strip()
+
+    width = info.get("width")
+    height = info.get("height")
+    try:
+        width = int(float(width)) if width is not None else None
+        height = int(float(height)) if height is not None else None
+    except (TypeError, ValueError):
+        width = height = None
+
+    objects = []
+    for obj in data.get("objects") or []:
+        if not isinstance(obj, dict):
+            continue
+        name = (obj.get("category") or "").strip()
+
+        points = None
+        seg = obj.get("segmentation")
+        if seg:
+            points = _seg_points(seg)
+
+        # 回退：bbox（ISAT 为 [x1, y1, x2, y2]）转矩形多边形
+        if points is None:
+            bbox = obj.get("bbox")
+            if bbox and len(bbox) >= 4:
+                try:
+                    x1, y1, x2, y2 = (float(v) for v in bbox[:4])
+                    points = [x1, y1, x2, y1, x2, y2, x1, y2]
+                except (TypeError, ValueError):
+                    points = None
+
+        if points is None or not name:
+            continue
+        objects.append((name, points))
+    return filename, width, height, objects
+
+
+def to_yolo_seg_line(name, points, width, height, class_map):
+    """把一个多边形转成 YOLO-seg 行（class x1 y1 x2 y2 ...）；类别不在映射中返回 None。"""
+    cls = class_map.get(name)
+    if cls is None:
+        return None
+    norm = []
+    for i in range(0, len(points), 2):
+        x = max(0.0, min(1.0, points[i] / width))
+        y = max(0.0, min(1.0, points[i + 1] / height))
+        norm.append(f"{x:.6f}")
+        norm.append(f"{y:.6f}")
+    return " ".join([str(cls)] + norm)
+
+
 def _natural_key(name):
     """自然排序键：把数字段转成整数，使 2-xxx 排在 10-xxx 之前。"""
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
@@ -191,6 +259,8 @@ def main() -> None:
     parser.add_argument("--classes", "-c", default=CLASSES, help="类别：逗号分隔或 classes.txt 路径；留空自动收集")
     parser.add_argument("--move", action="store_true", default=MOVE_UNLABELED, help="移动无标注图片（默认复制）")
     parser.add_argument("--no-unlabeled", action="store_true", default=NO_UNLABELED, help="不筛选无标注图片")
+    parser.add_argument("--out-format", choices=["detect", "seg"], default="detect",
+                        help="输出格式：detect=检测框(class cx cy w h)，seg=分割多边形(class x1 y1 x2 y2 ...)")
     args = parser.parse_args()
 
     images_dir = Path(args.images).expanduser().resolve()
@@ -219,11 +289,13 @@ def main() -> None:
         raise SystemExit("没有找到 ISAT JSON 标注文件。")
 
     # 3. 解析所有 JSON
+    is_seg = args.out_format == "seg"
+    parse_fn = parse_isat_seg if is_seg else parse_isat
     records = []
     failed_stems = set()  # 解析失败的标注文件 stem，避免被误判为「无标注」
     for json_path in json_files:
         try:
-            records.append((json_path, *parse_isat(json_path)))
+            records.append((json_path, *parse_fn(json_path)))
         except Exception as exc:  # noqa: BLE001
             print(f"[跳过] JSON 解析失败 {json_path}: {exc}")
             failed_stems.add(json_path.stem)
@@ -254,8 +326,13 @@ def main() -> None:
             continue
 
         lines = []
-        for name, xmin, ymin, xmax, ymax in boxes:
-            line = to_yolo_line(name, xmin, ymin, xmax, ymax, width, height, class_map)
+        for item in boxes:
+            if is_seg:
+                name, points = item
+                line = to_yolo_seg_line(name, points, width, height, class_map)
+            else:
+                name, xmin, ymin, xmax, ymax = item
+                line = to_yolo_line(name, xmin, ymin, xmax, ymax, width, height, class_map)
             if line is not None:
                 lines.append(line)
             else:

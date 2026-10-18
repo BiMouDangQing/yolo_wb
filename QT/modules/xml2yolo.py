@@ -53,7 +53,8 @@ class Xml2YoloWorker(QtCore.QThread):
     finished = Signal(int, int, int)  # (转换数, 失败数, 无标注数)
 
     def __init__(self, images_dir, xml_dir, labels_dir, unlabeled_dir,
-                 classes, move_unlabeled, no_unlabeled, format="xml", parent=None):
+                 classes, move_unlabeled, no_unlabeled, format="xml",
+                 out_format="detect", parent=None):
         super().__init__(parent)
         self.images_dir = images_dir
         self.xml_dir = xml_dir
@@ -63,6 +64,7 @@ class Xml2YoloWorker(QtCore.QThread):
         self.move_unlabeled = move_unlabeled
         self.no_unlabeled = no_unlabeled
         self.format = format
+        self.out_format = out_format  # detect / seg
 
     def run(self):
         if self.format == "isat":
@@ -75,9 +77,13 @@ class Xml2YoloWorker(QtCore.QThread):
             ext = ".XML"
             fmt_name = "XML"
             parse_fn = mod.parse_xml
+
+        is_seg = self.out_format == "seg"
+        if is_seg:
+            parse_fn = getattr(mod, "parse_isat_seg", None) or getattr(mod, "parse_xml_seg", None)
         supported = mod.SUPPORTED_EXTS
         read_image_size = mod.read_image_size
-        to_yolo_line = mod.to_yolo_line
+        to_yolo_line = mod.to_yolo_seg_line if is_seg else mod.to_yolo_line
         resolve_classes = mod.resolve_classes
 
         images_dir = Path(self.images_dir).expanduser()
@@ -150,8 +156,13 @@ class Xml2YoloWorker(QtCore.QThread):
                 continue
 
             lines = []
-            for name, xmin, ymin, xmax, ymax in boxes:
-                line = to_yolo_line(name, xmin, ymin, xmax, ymax, width, height, class_map)
+            for item in boxes:
+                if is_seg:
+                    name, points = item
+                    line = to_yolo_line(name, points, width, height, class_map)
+                else:
+                    name, xmin, ymin, xmax, ymax = item
+                    line = to_yolo_line(name, xmin, ymin, xmax, ymax, width, height, class_map)
                 if line is not None:
                     lines.append(line)
                 else:
@@ -254,6 +265,16 @@ class Xml2YoloModule(QtWidgets.QWidget):
         self.format_combo.addItem("ISAT (JSON)", "isat")
         self.format_combo.currentIndexChanged.connect(self._on_format_changed)
         fmt_row.addWidget(self.format_combo)
+        fmt_row.addSpacing(16)
+        fmt_row.addWidget(QtWidgets.QLabel("输出格式:"))
+        self.out_format_combo = QtWidgets.QComboBox()
+        self.out_format_combo.addItem("YOLO 检测（框）", "detect")
+        self.out_format_combo.addItem("YOLO 分割（多边形）", "seg")
+        self.out_format_combo.setToolTip(
+            "检测：class cx cy w h；分割：class x1 y1 x2 y2 ...\n"
+            "ISAT 有真实多边形，XML 只有矩形框（转分割时会输出矩形多边形）。"
+        )
+        fmt_row.addWidget(self.out_format_combo)
         fmt_row.addStretch()
         layout.addLayout(fmt_row)
 
@@ -389,6 +410,10 @@ class Xml2YoloModule(QtWidgets.QWidget):
         fidx = self.format_combo.findData(fmt)
         if fidx >= 0:
             self.format_combo.setCurrentIndex(fidx)
+        out_fmt = cfg.get("out_format", "detect")
+        oidx = self.out_format_combo.findData(out_fmt)
+        if oidx >= 0:
+            self.out_format_combo.setCurrentIndex(oidx)
         self.images_edit.setText(cfg.get("images_dir", ""))
         self.xml_edit.setText(cfg.get("xml_dir", ""))
         self.labels_edit.setText(cfg.get("labels_dir", ""))
@@ -411,6 +436,7 @@ class Xml2YoloModule(QtWidgets.QWidget):
             "move": self.move_combo.currentData(),
             "no_unlabeled": self.no_unl_check.isChecked(),
             "format": self.format_combo.currentData(),
+            "out_format": self.out_format_combo.currentData(),
         })
 
     def _start(self):
@@ -430,6 +456,7 @@ class Xml2YoloModule(QtWidgets.QWidget):
         self._worker = Xml2YoloWorker(
             images_dir=images_dir,
             xml_dir=self.xml_edit.text().strip(),
+            out_format=self.out_format_combo.currentData(),
             format=self.format_combo.currentData(),
             labels_dir=self.labels_edit.text().strip(),
             unlabeled_dir=self.unlabeled_edit.text().strip(),

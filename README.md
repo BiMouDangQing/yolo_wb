@@ -13,7 +13,7 @@
 | # | 功能 | 说明 |
 | --- | --- | --- |
 | 1 | 图片转换 | HEIC/其他格式 → JPG，支持原地转换删除原图 |
-| 2 | 标注转换 | Pascal VOC / LabelImg XML 或 ISAT JSON → YOLO txt，并筛选无标注图片 |
+| 2 | 标注转换 | Pascal VOC / LabelImg XML 或 ISAT JSON → YOLO txt（检测框 / 分割多边形），并筛选无标注图片 |
 | 3 | 标注质检 | 检测格式错误 / 越界框 / 零负宽高 / 极小框 / 巨框 / 空标签 / 类别 ID 越界 |
 | 4 | 漏标检测 | 用模型找「模型框出来但标签没有」的疑似漏标，支持在线补框 |
 | 5 | 白平衡 | 灰度世界 / 白斑法 / 完美反射 / 手动增益，统一色温 |
@@ -138,6 +138,7 @@ python tools/jpg.py -i ./images -o ./images_jpg
 python tools/heic2jpg.py -i ./photos -o ./photos_jpg --overwrite
 python tools/xml2yolo.py -i ./images -x ./xml -l ./labels
 python tools/isat2yolo.py -i ./images -j ./jsons -l ./labels -c "durian,background"
+python tools/isat2yolo.py -i ./images -j ./jsons -l ./labels --out-format seg  # YOLO 分割
 python tools/label_check.py -i ./labels -o ./label_issues.csv --nc 2
 python tools/miss_label.py -m ./best.pt -i ./images -l ./labels -o ./miss.csv --conf 0.3
 python tools/overexposure.py -i ./images -o ./fixed --strength 50
