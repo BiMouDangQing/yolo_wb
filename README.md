@@ -8,7 +8,7 @@
 
 ## ✨ 功能特性
 
-程序按推荐处理顺序提供了 19 个标签页：
+程序按推荐处理顺序提供了 20 个标签页：
 
 | # | 功能 | 说明 |
 | --- | --- | --- |
@@ -31,6 +31,7 @@
 | 17 | 标签映射 | 把指定类别 A 的框改成类别 B（A/B 可填类别名称或 ID），其余类别保持不变 |
 | 18 | 类别重命名 | 把类别名称 A 改成 B（只改 classes.txt，框的 class_id 保持不变） |
 | 19 | 类别合并 | 把类别 C 合并到 B（改框 id、删 C 行、后续 id 自动前移重排） |
+| 20 | 图片缩放 | 把图片缩放到指定尺寸（最长边），生成新数据集并保留 polygon 标签 |
 
 所有支持预览的模块都提供「原图 / 结果」翻页预览；所有批量处理功能页均提供进度条，并会记住上次填写的路径与参数。
 
@@ -97,7 +98,8 @@ yolo_data/
 │       ├── label_unify.py  # 标签统一（全部类别改成一类）
 │       ├── label_remap.py  # 标签映射（类别 A → 类别 B）
 │       ├── label_rename.py # 类别重命名（类别名称 A → B）
-│       └── label_merge.py  # 类别合并（类别 C → B，id 重排）
+│       ├── label_merge.py  # 类别合并（类别 C → B，id 重排）
+│       └── resize.py       # 图片缩放（缩放到指定尺寸，保留标签）
 ├── config/                 # 配置包：各模块配置读写 + 历史记忆
 │   ├── __init__.py         # load / save / history
 │   ├── config.json         # 各模块「当前」配置（本地路径，不入库）
@@ -120,7 +122,8 @@ yolo_data/
 │   ├── label_unify.py      # 标签统一（全部类别改成一类）
 │   ├── label_rename.py     # 类别重命名（类别名称 A → B）
 │   ├── label_remap.py      # 标签映射（类别 A → 类别 B）
-│   └── label_merge.py      # 类别合并（类别 C → B，id 重排）
+│   ├── label_merge.py      # 类别合并（类别 C → B，id 重排）
+│   └── resize_dataset.py   # 图片缩放（缩放到指定尺寸，保留标签）
 └── md/                     # 使用与结构文档
     ├── QT前端使用说明.md
     ├── YOLO训练图片预处理流程.md
@@ -152,6 +155,7 @@ python tools/label_unify.py -i ./labels --target 0
 python tools/label_remap.py -i ./labels --src 0-apple --dst 0
 python tools/label_rename.py -i ./labels --src 0-apple --dst apple
 python tools/label_merge.py -i ./labels --src 1-LightBruise --dst apple
+python tools/resize_dataset.py -i ./dataset/images -o ./dataset_1280 -s 1280
 ```
 
 ---

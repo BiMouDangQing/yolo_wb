@@ -29,6 +29,7 @@ from modules.miss_label import MissLabelModule
 from modules.overexposure import OverexposureModule
 from modules.quality import QualityModule
 from modules.rename import RenameModule
+from modules.resize import ResizeModule
 from modules.split import SplitModule
 from modules.underexposure import UnderexposureModule
 from modules.white_balance import WhiteBalanceModule
@@ -225,6 +226,7 @@ MODULES = [
     LabelRemapModule,
     LabelRenameModule,
     LabelMergeModule,
+    ResizeModule,
 ]
 
 
