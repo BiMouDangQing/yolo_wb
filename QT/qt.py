@@ -22,6 +22,7 @@ from modules.converter import ConverterModule
 from modules.dedup import DedupModule
 from modules.label_check import LabelCheckModule
 from modules.label_remap import LabelRemapModule
+from modules.label_rename import LabelRenameModule
 from modules.label_unify import LabelUnifyModule
 from modules.miss_label import MissLabelModule
 from modules.overexposure import OverexposureModule
@@ -221,6 +222,7 @@ MODULES = [
     AssembleModule,
     LabelUnifyModule,
     LabelRemapModule,
+    LabelRenameModule,
 ]
 
 

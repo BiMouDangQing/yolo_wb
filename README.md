@@ -8,7 +8,7 @@
 
 ## ✨ 功能特性
 
-程序按推荐处理顺序提供了 17 个标签页：
+程序按推荐处理顺序提供了 18 个标签页：
 
 | # | 功能 | 说明 |
 | --- | --- | --- |
@@ -29,6 +29,7 @@
 | 15 | 数据集汇总 | 把 train/val/test 三个路径下的图片与标签整理到标准 YOLO 结构 |
 | 16 | 标签统一 | 把 YOLO 标签所有框的类别 ID 统一改成指定类别（单类别检测） |
 | 17 | 标签映射 | 把指定类别 A 的框改成类别 B（A/B 可填类别名称或 ID），其余类别保持不变 |
+| 18 | 类别重命名 | 把类别名称 A 改成 B（只改 classes.txt，框的 class_id 保持不变） |
 
 所有支持预览的模块都提供「原图 / 结果」翻页预览；所有批量处理功能页均提供进度条，并会记住上次填写的路径与参数。
 
@@ -93,7 +94,8 @@ yolo_data/
 │       ├── rename.py       # 图片重命名（按序号连续命名）
 │       ├── assemble.py     # 数据集汇总（train/val/test 整理为标准结构）
 │       ├── label_unify.py  # 标签统一（全部类别改成一类）
-│       └── label_remap.py  # 标签映射（类别 A → 类别 B）
+│       ├── label_remap.py  # 标签映射（类别 A → 类别 B）
+│       └── label_rename.py # 类别重命名（类别名称 A → B）
 ├── config/                 # 配置包：各模块配置读写 + 历史记忆
 │   ├── __init__.py         # load / save / history
 │   ├── config.json         # 各模块「当前」配置（本地路径，不入库）
@@ -114,7 +116,8 @@ yolo_data/
 │   ├── rename.py           # 图片重命名（按序号连续命名）
 │   ├── assemble.py         # 数据集汇总（train/val/test 整理为标准结构）
 │   ├── label_unify.py      # 标签统一（全部类别改成一类）
-│   └── label_remap.py      # 标签映射（类别 A → 类别 B）
+│   ├── label_remap.py      # 标签映射（类别 A → 类别 B）
+│   └── label_rename.py     # 类别重命名（类别名称 A → B）
 └── md/                     # 使用与结构文档
     ├── QT前端使用说明.md
     ├── YOLO训练图片预处理流程.md
@@ -142,6 +145,7 @@ python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -r 10
 python tools/assemble.py --train ./train --val ./val --test ./test -o ./dataset --nc 1 --names durian
 python tools/rename.py -i ./images -o ./renamed --start 1 --width 4 --prefix img_
 python tools/label_unify.py -i ./labels --target 0
+python tools/label_rename.py -i ./labels --src 0-apple --dst apple
 python tools/label_remap.py -i ./labels --src 0-apple --dst 0
 ```
 

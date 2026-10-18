@@ -39,7 +39,8 @@ python qt.py
 | 14 | 图片重命名 | `QT/modules/rename.py` | 按序号从指定起点连续重命名图片（可同步标签） |
 | 15 | 数据集汇总 | `QT/modules/assemble.py` | 把 train/val/test 三路径的图片与标签整理到标准 YOLO 结构 |
 | 16 | 标签统一 | `QT/modules/label_unify.py` | 把所有框的类别 ID 统一改成指定类别 |
-| 17 | 标签映射 | `QT/modules/label_remap.py` | 把类别 A 的框改成类别 B |
+| 17 | 标签映射 | `QT/modules/label_remap.py` | 把类别 A 的框改成类别 B（可填名称或 ID） |
+| 18 | 类别重命名 | `QT/modules/label_rename.py` | 把类别名称 A 改成 B（只改 classes.txt） |
 
 ---
 
@@ -212,6 +213,15 @@ python qt.py
 - **A / B 可填「类别名称」或「数字 ID」**：例如源填 `0-apple`（类别名）、目标填 `0`（ID）；选好 labels 目录后，会自动读 `classes.txt` 把类别名加载到下拉框供选择，也可手动输入。
 - 只改匹配到源类别的框，其余类别保持不变。
 - 输出方式：原地修改（覆盖原文件）/ 输出到新目录。
+
+### 3.17 类别重命名
+
+把 YOLO 数据集里某个类别名称 A 改成新名称 B（如 `0-apple → apple`）。
+
+- labels 目录（必填，需含 `classes.txt`）、源类别名 A、新类别名 B。
+- 只改 `classes.txt` 里的类别名；框的 class_id 保持不变（A 的位置不变），「名称 → id」绑定关系自动更新。
+- 选好 labels 目录后会自动把现有类别名加载到下拉框供选择。
+- 冲突保护：若 B 已存在会拦截，避免两个类别同名。
 
 ---
 
