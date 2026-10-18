@@ -8,7 +8,7 @@
 
 ## ✨ 功能特性
 
-程序按推荐处理顺序提供了 15 个标签页：
+程序按推荐处理顺序提供了 17 个标签页：
 
 | # | 功能 | 说明 |
 | --- | --- | --- |
@@ -27,11 +27,13 @@
 | 13 | 背景添加 | 背景图作负样本（按占比自动计算数量 + 随机增强扩充 + 空标签），降低误检 |
 | 14 | 图片重命名 | 按序号从指定起点连续重命名图片（可同步重命名同名 YOLO 标签） |
 | 15 | 数据集汇总 | 把 train/val/test 三个路径下的图片与标签整理到标准 YOLO 结构 |
+| 16 | 标签统一 | 把 YOLO 标签所有框的类别 ID 统一改成指定类别（单类别检测） |
+| 17 | 标签映射 | 把指定类别 A 的框改成类别 B，其余类别保持不变 |
 
 所有支持预览的模块都提供「原图 / 结果」翻页预览；所有批量处理功能页均提供进度条，并会记住上次填写的路径与参数。
 
-> 📌 **配置记忆**：每个功能页的路径与参数按模块隔s/` 目录，按「月份 / 日期」组织（如 `logs/2026-10/2026-10-10.log`）页面顶部提供「历史配置」下拉框，可一键恢复之前某次的参数，存于 `config/`。
-> 📌 **运行日志**：每次运行会把日志写入 `log/` 目录下按「日期_时间」命名的 `.log` 文件，便于回溯排查。
+> 📌 **配置记忆**：每个功能页的路径与参数按模块隔离保存（互不干扰），并自动保留最近 10 次历史配置；页面顶部提供「历史配置」下拉框，可一键恢复之前某次的参数，存于 `config/`。
+> 📌 **运行日志**：每次运行会把日志写入 `logs/` 目录，按「月份 / 日期」组织（如 `logs/2026-10/2026-10-10.log`），便于回溯排查。
 
 ---
 
@@ -89,14 +91,16 @@ yolo_data/
 │       ├── split.py        # 数据集切分
 │       ├── background.py   # 背景添加（负样本）
 │       ├── rename.py       # 图片重命名（按序号连续命名）
-│       └── assemble.py     # 数据集汇总（train/val/test 整理为标准结构）
+│       ├── assemble.py     # 数据集汇总（train/val/test 整理为标准结构）
+│       ├── label_unify.py  # 标签统一（全部类别改成一类）
+│       └── label_remap.py  # 标签映射（类别 A → 类别 B）
 ├── config/                 # 配置包：各模块配置读写 + 历史记忆
 │   ├── __init__.py         # load / save / history
 │   ├── config.json         # 各模块「当前」配置（本地路径，不入库）
-│   └──s/                   # 运行日志包
+│   └── history/            # 各模块「历史」配置（最近 N 次）
+├── logs/                   # 运行日志包
 │   ├── __init__.py         # write_log 写入日志文件
-│   └── YYYY-MM/            # 按月份子目录 + 日期文件（如 2026-10/2026-10-10.log，
-│   └── *.log               # 按「日期_时间」命名的日志文件（不入库）
+│   └── YYYY-MM/            # 按月份子目录 + 日期文件（如 2026-10/2026-10-10.log，不入库）
 ├── tools/                  # 命令行脚本（独立可运行，不依赖 Qt）
 │   ├── jpg.py / heic2jpg.py# 图片转换
 │   ├── xml2yolo.py         # 标注转换
@@ -105,9 +109,11 @@ yolo_data/
 │   ├── overexposure.py / underexposure.py  # 过曝 / 过暗
 │   ├── augment.py          # 数据增强
 │   ├── analysis.py         # 数据集分析
+│   ├── add_backgrounds.py  # 背景添加（负样本）
 │   ├── rename.py           # 图片重命名（按序号连续命名）
-│   └── assemble.py         # 数据集汇总（train/val/test 整理为标准结构
-│   └── rename.py           # 图片重命名（按序号连续命名）
+│   ├── assemble.py         # 数据集汇总（train/val/test 整理为标准结构）
+│   ├── label_unify.py      # 标签统一（全部类别改成一类）
+│   └── label_remap.py      # 标签映射（类别 A → 类别 B）
 └── md/                     # 使用与结构文档
     ├── QT前端使用说明.md
     ├── YOLO训练图片预处理流程.md
@@ -133,6 +139,8 @@ python tools/analysis.py -i ./images -l ./labels -o ./analysis.csv --remove --mo
 python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -r 10
 python tools/assemble.py --train ./train --val ./val --test ./test -o ./dataset --nc 1 --names durian
 python tools/rename.py -i ./images -o ./renamed --start 1 --width 4 --prefix img_
+python tools/label_unify.py -i ./labels --target 0
+python tools/label_remap.py -i ./labels --src 1 --dst 0
 ```
 
 ---
@@ -153,6 +161,7 @@ python tools/rename.py -i ./images -o ./renamed --start 1 --width 4 --prefix img
   → 数据集汇总（train / val / test 整理为标准结构）
   → 背景添加（背景负样本，降低误检）
   → 图片重命名（按序号统一命名）
+  → 标签统一 / 标签映射（类别归一 / 类别转换）
 ```
 
 ---

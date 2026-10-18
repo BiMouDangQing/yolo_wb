@@ -21,6 +21,8 @@ from modules.background import BackgroundModule
 from modules.converter import ConverterModule
 from modules.dedup import DedupModule
 from modules.label_check import LabelCheckModule
+from modules.label_remap import LabelRemapModule
+from modules.label_unify import LabelUnifyModule
 from modules.miss_label import MissLabelModule
 from modules.overexposure import OverexposureModule
 from modules.quality import QualityModule
@@ -217,6 +219,8 @@ MODULES = [
     BackgroundModule,
     RenameModule,
     AssembleModule,
+    LabelUnifyModule,
+    LabelRemapModule,
 ]
 
 
