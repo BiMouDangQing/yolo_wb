@@ -178,10 +178,11 @@ class AnalysisWorker(QtCore.QThread):
             "total_boxes": total_boxes,
             "class_counts": class_counts,
             "class_names": class_names,
-            "csv_path": str(csv_path),
+            "csv_path": str(csv_path) if csv_path else "",
         }
         self.stats.emit(stats)
-        self.log.emit(f"已生成数据集分析 CSV：{csv_path}")
+        if csv_path:
+            self.log.emit(f"已生成数据集分析 CSV：{csv_path}")
         self.log.emit(
             f"\n完成：共 {len(files)} 张，已标注 {annotated} 张，"
             f"未标注 {unlabeled} 张，总框数 {total_boxes}。"
@@ -190,40 +191,52 @@ class AnalysisWorker(QtCore.QThread):
 
     def _write_csv(self, images, labels_dir, class_names, class_counts,
                    total, annotated, unlabeled, total_boxes, details):
-        """生成分析 CSV，返回文件路径。"""
+        """生成分析 CSV，返回文件路径；写入失败（如被占用）返回 None。"""
         if self.csv_path:
             csv_path = Path(self.csv_path).expanduser()
             if csv_path.suffix.lower() != ".csv":
                 csv_path = csv_path / "dataset_analysis.csv"
         else:
             csv_path = images / "dataset_analysis.csv"
-        csv_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
-            writer = csv.writer(f)
+        try:
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self.log.emit(f"[警告] 无法创建 CSV 目录 {csv_path.parent}：{exc}")
+            return None
 
-            # 摘要
-            writer.writerow(["指标", "数值"])
-            writer.writerow(["图片总数", total])
-            writer.writerow(["已标注", annotated])
-            writer.writerow(["未标注", unlabeled])
-            writer.writerow(["总标注框", total_boxes])
-            writer.writerow([])
+        try:
+            with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
 
-            # 类别统计
-            writer.writerow(["class_id", "类别", "框数量"])
-            for cls in sorted(class_counts):
-                writer.writerow([
-                    cls,
-                    self._name_of(class_names, cls),
-                    class_counts[cls],
-                ])
-            writer.writerow([])
+                # 摘要
+                writer.writerow(["指标", "数值"])
+                writer.writerow(["图片总数", total])
+                writer.writerow(["已标注", annotated])
+                writer.writerow(["未标注", unlabeled])
+                writer.writerow(["总标注框", total_boxes])
+                writer.writerow([])
 
-            # 图片明细
-            writer.writerow(["图片", "是否标注", "框数量"])
-            for name, ok, count in details:
-                writer.writerow([name, ok, count])
+                # 类别统计
+                writer.writerow(["class_id", "类别", "框数量"])
+                for cls in sorted(class_counts):
+                    writer.writerow([
+                        cls,
+                        self._name_of(class_names, cls),
+                        class_counts[cls],
+                    ])
+                writer.writerow([])
+
+                # 图片明细
+                writer.writerow(["图片", "是否标注", "框数量"])
+                for name, ok, count in details:
+                    writer.writerow([name, ok, count])
+        except OSError as exc:
+            self.log.emit(
+                f"[警告] CSV 写入失败（文件可能被 Excel 等程序占用，请关闭后重试）：{csv_path}\n"
+                f"  {exc}"
+            )
+            return None
 
         return csv_path
 

@@ -208,16 +208,23 @@ class MissLabelWorker(QtCore.QThread):
             csv_path = Path(self.csv_path).expanduser()
             if csv_path.suffix.lower() != ".csv":
                 csv_path = csv_path / "miss_labels.csv"
-            csv_path.parent.mkdir(parents=True, exist_ok=True)
-            with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    "图片", "类别", "置信度",
-                    "归一化x1", "归一化y1", "归一化x2", "归一化y2",
-                ])
-                for row in rows:
-                    writer.writerow(row)
-            self.log.emit(f"已生成疑似漏标明细 CSV：{csv_path}")
+            try:
+                csv_path.parent.mkdir(parents=True, exist_ok=True)
+                with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
+                    writer = csv.writer(f)
+                    writer.writerow([
+                        "图片", "类别", "置信度",
+                        "归一化x1", "归一化y1", "归一化x2", "归一化y2",
+                    ])
+                    for row in rows:
+                        writer.writerow(row)
+                self.log.emit(f"已生成疑似漏标明细 CSV：{csv_path}")
+            except OSError as exc:
+                self.log.emit(
+                    f"[警告] CSV 写入失败（文件可能被 Excel 等程序占用，请关闭后重试）：{csv_path}\n"
+                    f"  {exc}"
+                )
+                csv_path = None
 
         if thumbs:
             self.previews.emit(thumbs, thumb_labels)

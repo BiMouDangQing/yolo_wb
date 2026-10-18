@@ -225,15 +225,22 @@ class LabelCheckWorker(QtCore.QThread):
             csv_path = Path(self.csv_path).expanduser()
             if csv_path.suffix.lower() != ".csv":
                 csv_path = csv_path / "label_issues.csv"
-            csv_path.parent.mkdir(parents=True, exist_ok=True)
-            with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
-                writer = csv.writer(f)
-                writer.writerow(["文件", "行号", "异常类型", "详情"])
-                for issue in all_issues:
-                    writer.writerow([
-                        issue["file"], issue["line"], issue["type"], issue["detail"],
-                    ])
-            self.log.emit(f"已生成异常明细 CSV：{csv_path}")
+            try:
+                csv_path.parent.mkdir(parents=True, exist_ok=True)
+                with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["文件", "行号", "异常类型", "详情"])
+                    for issue in all_issues:
+                        writer.writerow([
+                            issue["file"], issue["line"], issue["type"], issue["detail"],
+                        ])
+                self.log.emit(f"已生成异常明细 CSV：{csv_path}")
+            except OSError as exc:
+                self.log.emit(
+                    f"[警告] CSV 写入失败（文件可能被 Excel 等程序占用，请关闭后重试）：{csv_path}\n"
+                    f"  {exc}"
+                )
+                csv_path = None
 
         stats = {
             "total_files": len(txt_files),
