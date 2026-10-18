@@ -61,8 +61,34 @@ NO_UNLABELED = False     # True: 不筛选无标注图片
 # ================================================================
 
 
+def _flatten_numbers(seg):
+    """递归地把 segmentation 里嵌套的数字全部展开为一维浮点数列表。"""
+    nums = []
+    if isinstance(seg, (int, float)):
+        return [float(seg)]
+    if isinstance(seg, (list, tuple)):
+        for item in seg:
+            nums.extend(_flatten_numbers(item))
+    return nums
+
+
+def _seg_bbox(seg):
+    """从 segmentation 多边形计算外接框 (xmin, ymin, xmax, ymax)；失败返回 None。"""
+    nums = _flatten_numbers(seg)
+    if len(nums) < 4 or len(nums) % 2 != 0:
+        return None
+    xs = nums[0::2]
+    ys = nums[1::2]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
 def parse_isat(path: Path):
-    """解析单个 ISAT JSON，返回 (filename, width, height, [(name, xmin, ymin, xmax, ymax), ...])。"""
+    """解析单个 ISAT JSON，返回 (filename, width, height, [(name, xmin, ymin, xmax, ymax), ...])。
+
+    ISAT 标注的核心是 objects[].segmentation（多边形），bbox 为辅助字段且是
+    [x1, y1, x2, y2]（左上/右下两点式）。这里优先用 segmentation 计算外接框，
+    segmentation 缺失时回退到 bbox。
+    """
     data = json.loads(path.read_text(encoding="utf-8"))
 
     info = data.get("info") or {}
@@ -78,21 +104,31 @@ def parse_isat(path: Path):
 
     boxes = []
     for obj in data.get("objects") or []:
+        if not isinstance(obj, dict):
+            continue
         name = (obj.get("category") or "").strip()
-        bbox = obj.get("bbox")
-        if not bbox or len(bbox) < 4:
+
+        # 优先：segmentation 多边形 -> 外接框
+        xmin = ymin = xmax = ymax = None
+        seg = obj.get("segmentation")
+        if seg:
+            rect = _seg_bbox(seg)
+            if rect:
+                xmin, ymin, xmax, ymax = rect
+
+        # 回退：bbox（ISAT 为 [x1, y1, x2, y2]）
+        if xmin is None:
+            bbox = obj.get("bbox")
+            if bbox and len(bbox) >= 4:
+                try:
+                    x1, y1, x2, y2 = (float(v) for v in bbox[:4])
+                    xmin, ymin, xmax, ymax = x1, y1, x2, y2
+                except (TypeError, ValueError):
+                    pass
+
+        if xmin is None or not name:
             continue
-        try:
-            x = float(bbox[0])
-            y = float(bbox[1])
-            w = float(bbox[2])
-            h = float(bbox[3])
-        except (TypeError, ValueError):
-            continue
-        xmin, ymin = x, y
-        xmax, ymax = x + w, y + h
-        if name:
-            boxes.append((name, xmin, ymin, xmax, ymax))
+        boxes.append((name, xmin, ymin, xmax, ymax))
     return filename, width, height, boxes
 
 
@@ -177,11 +213,13 @@ def main() -> None:
 
     # 3. 解析所有 JSON
     records = []
+    failed_stems = set()  # 解析失败的标注文件 stem，避免被误判为「无标注」
     for json_path in json_files:
         try:
             records.append((json_path, *parse_isat(json_path)))
-        except (json.JSONDecodeError, ValueError, OSError) as exc:
+        except Exception as exc:  # noqa: BLE001
             print(f"[跳过] JSON 解析失败 {json_path}: {exc}")
+            failed_stems.add(json_path.stem)
 
     # 4. 类别映射
     class_map = resolve_classes(records, args.classes)
@@ -192,7 +230,7 @@ def main() -> None:
 
     # 5. 转换并写 txt
     ok_count = fail_count = 0
-    annotated_stems = set()
+    annotated_stems = set(failed_stems)  # 解析失败的文件不参与无标注筛选
     for json_path, filename, width, height, boxes in records:
         annotated_stems.add(json_path.stem)
         if filename:

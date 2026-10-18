@@ -114,11 +114,13 @@ class Xml2YoloWorker(QtCore.QThread):
             return
 
         records = []
+        failed_stems = set()  # 解析失败的标注文件 stem，避免被误判为「无标注」
         for xml_path in xml_files:
             try:
                 records.append((xml_path, *parse_fn(xml_path)))
             except Exception as exc:  # noqa: BLE001
                 self.log.emit(f"[跳过] {fmt_name} 解析失败 {xml_path}：{exc}")
+                failed_stems.add(xml_path.stem)
 
         class_map = resolve_classes(records, self.classes)
 
@@ -129,7 +131,7 @@ class Xml2YoloWorker(QtCore.QThread):
         ok = fail = 0
         thumbs = []
         thumb_labels = []
-        annotated_stems = set()
+        annotated_stems = set(failed_stems)  # 解析失败的文件不参与无标注筛选
         for i, (xml_path, filename, width, height, boxes) in enumerate(records, 1):
             self.progress.emit(i, len(records))
             annotated_stems.add(xml_path.stem)
