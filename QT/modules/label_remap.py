@@ -1,6 +1,7 @@
 """标签映射模块：把 YOLO 标签文件里指定类别 A 的框，改成类别 B。
 
-例如：把类别 1（误标）的框改成类别 0，其余类别保持不变。
+A / B 既可以是「类别名称」（自动读 labels 目录下的 classes.txt 解析成 ID），
+也可以是「数字 ID」。例如把类别名 0-apple 的框全部改成 0。
 只改匹配到源类别的框，其余行原样保留。
 """
 
@@ -10,6 +11,33 @@ from config import load as load_config, save as save_config
 from logs import write_log
 from modules._history import HistoryBar
 from qt_binding import QtCore, QtGui, QtWidgets, Signal
+
+
+def load_class_names(labels_dir):
+    """读取 labels 目录下的 classes.txt，返回类别名列表；不存在返回 []。"""
+    classes_txt = Path(labels_dir) / "classes.txt"
+    if classes_txt.is_file():
+        try:
+            return [
+                line.strip()
+                for line in classes_txt.read_text(encoding="utf-8", errors="ignore").splitlines()
+                if line.strip()
+            ]
+        except OSError:
+            return []
+    return []
+
+
+def resolve_cls(value, class_names):
+    """把输入解析成 class_id：纯数字直接当 ID，否则查类别名列表。失败返回 None。"""
+    value = (value or "").strip()
+    if not value:
+        return None
+    if value.isdigit():
+        return int(value)
+    if value in class_names:
+        return class_names.index(value)
+    return None
 
 
 def remap_line(line, src_cls, dst_cls):
@@ -36,13 +64,13 @@ class LabelRemapWorker(QtCore.QThread):
     progress = Signal(int, int)      # (当前进度, 总数)
     finished = Signal(int, int)      # (文件数, 修改框数)
 
-    def __init__(self, labels_dir, output_dir, inplace, src_cls, dst_cls, parent=None):
+    def __init__(self, labels_dir, output_dir, inplace, src, dst, parent=None):
         super().__init__(parent)
         self.labels_dir = labels_dir
         self.output_dir = output_dir
         self.inplace = inplace
-        self.src_cls = src_cls
-        self.dst_cls = dst_cls
+        self.src = src          # 源类别（名称或 ID）
+        self.dst = dst          # 目标类别（名称或 ID）
 
     def run(self):
         labels = Path(self.labels_dir).expanduser()
@@ -51,8 +79,23 @@ class LabelRemapWorker(QtCore.QThread):
             self.finished.emit(0, 0)
             return
 
+        class_names = load_class_names(labels)
+        src_cls = resolve_cls(self.src, class_names)
+        dst_cls = resolve_cls(self.dst, class_names)
+        if src_cls is None:
+            self.log.emit(f"无法解析源类别：{self.src!r}（可填数字 ID 或 classes.txt 里的类别名）")
+            self.finished.emit(0, 0)
+            return
+        if dst_cls is None:
+            self.log.emit(f"无法解析目标类别：{self.dst!r}（可填数字 ID 或 classes.txt 里的类别名）")
+            self.finished.emit(0, 0)
+            return
+        if class_names:
+            self.log.emit(f"类别表：{class_names}")
+
         files = sorted(p for p in labels.rglob("*")
-                       if p.is_file() and p.suffix.lower() == ".txt")
+                       if p.is_file() and p.suffix.lower() == ".txt"
+                       and p.name != "classes.txt")
         if not files:
             self.log.emit("labels 目录中没有找到 .txt 标签文件。")
             self.finished.emit(0, 0)
@@ -82,7 +125,7 @@ class LabelRemapWorker(QtCore.QThread):
             new_lines = []
             changed = 0
             for line in lines:
-                new_line = remap_line(line, self.src_cls, self.dst_cls)
+                new_line = remap_line(line, src_cls, dst_cls)
                 new_lines.append(new_line)
                 old_parts = line.split()
                 new_parts = new_line.split()
@@ -102,7 +145,7 @@ class LabelRemapWorker(QtCore.QThread):
 
             file_count += 1
             box_count += changed
-            self.log.emit(f"[{i + 1}/{total}] {src.name}：{changed} 框 {self.src_cls}→{self.dst_cls}")
+            self.log.emit(f"[{i + 1}/{total}] {src.name}：{changed} 框 {src_cls}→{dst_cls}")
 
         self.log.emit(f"\n完成：处理 {file_count} 个文件，共改写 {box_count} 个框。")
         self.finished.emit(file_count, box_count)
@@ -121,8 +164,9 @@ class LabelRemapModule(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
 
         hint = QtWidgets.QLabel(
-            "把 YOLO 标签文件里指定类别 A 的框改成类别 B（如 1 → 0）。\n"
-            "只改匹配到源类别的框，其余类别保持不变。"
+            "把 YOLO 标签文件里指定类别 A 的框改成类别 B。\n"
+            "A / B 可填「类别名称」（如 0-apple）或「数字 ID」（如 0），\n"
+            "会自动读 labels 目录下的 classes.txt 解析；只改匹配到 A 的框，其余不变。"
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -138,19 +182,23 @@ class LabelRemapModule(QtWidgets.QWidget):
         lbl_row.addWidget(lbl_btn)
         layout.addLayout(lbl_row)
 
-        # 源类别 -> 目标类别
+        # 源类别 -> 目标类别（可输入名称或 ID）
         cls_row = QtWidgets.QHBoxLayout()
         cls_row.addWidget(QtWidgets.QLabel("源类别 A:"))
-        self.src_spin = QtWidgets.QSpinBox()
-        self.src_spin.setRange(0, 9999)
-        self.src_spin.setValue(1)
-        cls_row.addWidget(self.src_spin)
+        self.src_combo = QtWidgets.QComboBox()
+        self.src_combo.setEditable(True)
+        self.src_combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        self.src_combo.setMinimumWidth(160)
+        self.src_combo.setToolTip("类别名称（如 0-apple）或数字 ID（如 1）")
+        cls_row.addWidget(self.src_combo)
         cls_row.addSpacing(16)
         cls_row.addWidget(QtWidgets.QLabel("目标类别 B:"))
-        self.dst_spin = QtWidgets.QSpinBox()
-        self.dst_spin.setRange(0, 9999)
-        self.dst_spin.setValue(0)
-        cls_row.addWidget(self.dst_spin)
+        self.dst_combo = QtWidgets.QComboBox()
+        self.dst_combo.setEditable(True)
+        self.dst_combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        self.dst_combo.setMinimumWidth(160)
+        self.dst_combo.setToolTip("类别名称或数字 ID（如 0）")
+        cls_row.addWidget(self.dst_combo)
         cls_row.addStretch()
         layout.addLayout(cls_row)
 
@@ -207,6 +255,21 @@ class LabelRemapModule(QtWidgets.QWidget):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择 labels 目录")
         if path:
             self.labels_edit.setText(path)
+            self._load_class_names(path)
+
+    def _load_class_names(self, labels_dir):
+        """把 labels 目录下 classes.txt 的类别名加载到下拉框（不覆盖用户已输入的文字）。"""
+        names = load_class_names(labels_dir)
+        if not names:
+            return
+        for combo in (self.src_combo, self.dst_combo):
+            current = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(names)
+            # 保留用户已经输入的文字
+            combo.setEditText(current if current else "")
+            combo.blockSignals(False)
 
     def _pick_output(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择输出目录")
@@ -228,19 +291,22 @@ class LabelRemapModule(QtWidgets.QWidget):
     def _apply_config(self, cfg):
         self.labels_edit.setText(cfg.get("labels_dir", ""))
         self.output_edit.setText(cfg.get("output_dir", ""))
-        self.src_spin.setValue(int(cfg.get("src_cls", 1)))
-        self.dst_spin.setValue(int(cfg.get("dst_cls", 0)))
+        self.src_combo.setEditText(str(cfg.get("src", "1")))
+        self.dst_combo.setEditText(str(cfg.get("dst", "0")))
         mode = cfg.get("mode", "inplace")
         idx = self.mode_combo.findData(mode)
         if idx >= 0:
             self.mode_combo.setCurrentIndex(idx)
+        labels_dir = cfg.get("labels_dir", "")
+        if labels_dir:
+            self._load_class_names(labels_dir)
 
     def _persist_config(self):
         save_config("label_remap", {
             "labels_dir": self.labels_edit.text().strip(),
             "output_dir": self.output_edit.text().strip(),
-            "src_cls": self.src_spin.value(),
-            "dst_cls": self.dst_spin.value(),
+            "src": self.src_combo.currentText().strip(),
+            "dst": self.dst_combo.currentText().strip(),
             "mode": self.mode_combo.currentData(),
         })
 
@@ -248,6 +314,11 @@ class LabelRemapModule(QtWidgets.QWidget):
         labels_dir = self.labels_edit.text().strip()
         if not labels_dir:
             QtWidgets.QMessageBox.warning(self, "提示", "请选择 labels 目录。")
+            return
+        src = self.src_combo.currentText().strip()
+        dst = self.dst_combo.currentText().strip()
+        if not src or not dst:
+            QtWidgets.QMessageBox.warning(self, "提示", "请填写源类别 A 和目标类别 B（名称或 ID）。")
             return
 
         inplace = self.mode_combo.currentData() == "inplace"
@@ -266,8 +337,8 @@ class LabelRemapModule(QtWidgets.QWidget):
             labels_dir=labels_dir,
             output_dir=output_dir,
             inplace=inplace,
-            src_cls=self.src_spin.value(),
-            dst_cls=self.dst_spin.value(),
+            src=src,
+            dst=dst,
         )
         self._worker.log.connect(self._append_log)
         self._worker.progress.connect(self._on_progress)

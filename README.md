@@ -28,7 +28,7 @@
 | 14 | 图片重命名 | 按序号从指定起点连续重命名图片（可同步重命名同名 YOLO 标签） |
 | 15 | 数据集汇总 | 把 train/val/test 三个路径下的图片与标签整理到标准 YOLO 结构 |
 | 16 | 标签统一 | 把 YOLO 标签所有框的类别 ID 统一改成指定类别（单类别检测） |
-| 17 | 标签映射 | 把指定类别 A 的框改成类别 B，其余类别保持不变 |
+| 17 | 标签映射 | 把指定类别 A 的框改成类别 B（A/B 可填类别名称或 ID），其余类别保持不变 |
 
 所有支持预览的模块都提供「原图 / 结果」翻页预览；所有批量处理功能页均提供进度条，并会记住上次填写的路径与参数。
 
@@ -142,7 +142,7 @@ python tools/add_backgrounds.py -b ./backgrounds -d ./dataset -r 10
 python tools/assemble.py --train ./train --val ./val --test ./test -o ./dataset --nc 1 --names durian
 python tools/rename.py -i ./images -o ./renamed --start 1 --width 4 --prefix img_
 python tools/label_unify.py -i ./labels --target 0
-python tools/label_remap.py -i ./labels --src 1 --dst 0
+python tools/label_remap.py -i ./labels --src 0-apple --dst 0
 ```
 
 ---
