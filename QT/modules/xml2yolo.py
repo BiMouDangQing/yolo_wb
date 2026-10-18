@@ -134,9 +134,6 @@ class Xml2YoloWorker(QtCore.QThread):
         annotated_stems = set(failed_stems)  # 解析失败的文件不参与无标注筛选
         for i, (xml_path, filename, width, height, boxes) in enumerate(records, 1):
             self.progress.emit(i, len(records))
-            annotated_stems.add(xml_path.stem)
-            if filename:
-                annotated_stems.add(Path(filename).stem)
 
             # XML 缺少 size 时从图片回退读取尺寸
             if not width or not height:
@@ -160,9 +157,17 @@ class Xml2YoloWorker(QtCore.QThread):
                 else:
                     self.log.emit(f"[警告] 未知类别 '{name}'（{xml_path.name}），已忽略")
 
+            if not lines:
+                # 0 个有效框 → 视为无标注（与分析口径一致）
+                self.log.emit(f"[无标注] {xml_path.name}（0 个有效框）")
+                continue
+
             dst = (labels_dir / (xml_path.stem + ".txt")) if labels_dir else xml_path.with_suffix(".txt")
-            dst.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+            dst.write_text("\n".join(lines) + "\n", encoding="utf-8")
             ok += 1
+            annotated_stems.add(xml_path.stem)
+            if filename:
+                annotated_stems.add(Path(filename).stem)
             self.log.emit(f"[成功] {xml_path.name} -> {dst.name}（{len(lines)} 个框）")
 
             img_path = images.get(xml_path.stem)

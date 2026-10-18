@@ -239,10 +239,6 @@ def main() -> None:
     ok_count = fail_count = 0
     annotated_stems = set(failed_stems)  # 解析失败的文件不参与无标注筛选
     for json_path, filename, width, height, boxes in records:
-        annotated_stems.add(json_path.stem)
-        if filename:
-            annotated_stems.add(Path(filename).stem)
-
         # JSON 缺少尺寸时从图片回退读取
         if not width or not height:
             img_path = images.get(json_path.stem)
@@ -265,10 +261,18 @@ def main() -> None:
             else:
                 print(f"[警告] 未知类别 '{name}'（{json_path.name}），已忽略")
 
-        dst = (labels_dir / (json_path.stem + ".txt")) if labels_dir else json_path.with_suffix(".txt")
-        dst.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
-        ok_count += 1
-        print(f"[成功] {json_path.name} -> {dst.name}（{len(lines)} 个框）")
+        if lines:
+            # 有有效框 → 已标注
+            dst = (labels_dir / (json_path.stem + ".txt")) if labels_dir else json_path.with_suffix(".txt")
+            dst.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            ok_count += 1
+            annotated_stems.add(json_path.stem)
+            if filename:
+                annotated_stems.add(Path(filename).stem)
+            print(f"[成功] {json_path.name} -> {dst.name}（{len(lines)} 个框）")
+        else:
+            # 0 个有效框 → 视为无标注（与分析口径一致）
+            print(f"[无标注] {json_path.name}（0 个有效框）")
 
     # 保存 classes.txt
     classes_out = (labels_dir if labels_dir else json_dir) / "classes.txt"
