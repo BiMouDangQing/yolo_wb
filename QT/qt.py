@@ -32,6 +32,7 @@ from modules.rename import RenameModule
 from modules.resize import ResizeModule
 from modules.split import SplitModule
 from modules.underexposure import UnderexposureModule
+from modules.visualize import VisualizeModule
 from modules.white_balance import WhiteBalanceModule
 from modules.xml2yolo import Xml2YoloModule
 
@@ -227,6 +228,7 @@ MODULES = [
     LabelRenameModule,
     LabelMergeModule,
     ResizeModule,
+    VisualizeModule,
 ]
 
 
