@@ -4,6 +4,7 @@
 与前端模块 `QT/modules/rename.py` 对应，逻辑保持一致。
 命名格式：{前缀}{序号:0{位数}d}{原扩展名}
 支持原地重命名（--inplace）或复制到新文件夹（-o）。
+可同步重命名同名标签（.txt / .json / .xml / .yaml / .csv），保证图片与标签配对不丢失。
 
 用法:
     python tools/rename.py -i ./images -o ./renamed --start 1 --width 4 --prefix img_
@@ -17,6 +18,11 @@ from pathlib import Path
 
 SUPPORTED_EXTS = {
     ".JPG", ".JPEG", ".PNG", ".BMP", ".WEBP", ".TIF", ".TIFF",
+}
+
+# 可同步重命名的标签文件格式（与图片同名、扩展名不同）
+LABEL_EXTS = {
+    ".TXT", ".JSON", ".XML", ".YAML", ".YML", ".CSV",
 }
 
 
@@ -38,27 +44,57 @@ def _find_labels_dir(images_dir):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="把图片按序号连续重命名")
-    parser.add_argument("--images", "-i", required=True, help="图片文件夹")
+    parser = argparse.ArgumentParser(description="把图片按序号连续重命名（无图片时可仅重命名标签）")
+    parser.add_argument("--images", "-i", default="", help="图片文件夹（无图片时可留空，需提供 --labels）")
     parser.add_argument("--out", "-o", default="", help="输出目录（复制模式，默认不指定则需 --inplace）")
     parser.add_argument("--inplace", action="store_true", help="原地重命名（直接改原文件）")
     parser.add_argument("--labels", "-l", default="", help="标签目录（留空自动检测 images 同级 labels）")
     parser.add_argument("--start", type=int, default=1, help="起始序号，默认 1")
-    parser.add_argument("--width", type=int, default=4, help="补零位数，默认 4")
+    parser.add_argument("--width", type=int, default=4, help="补零位数，0=纯数字，默认 4")
     parser.add_argument("--prefix", default="", help="前缀，默认空")
     parser.add_argument("--sort", choices=["name", "mtime"], default="mtime",
                         help="排序方式：mtime=修改时间（默认），name=文件名自然排序")
     parser.add_argument("--no-labels", action="store_true", help="不同步重命名标签")
     args = parser.parse_args()
 
-    images = Path(args.images).expanduser()
-    if not images.is_dir():
-        raise SystemExit(f"图片文件夹不存在: {images}")
+    images = Path(args.images).expanduser() if args.images else None
+    has_images = images is not None and images.is_dir()
+    files = []
+    if has_images:
+        files = [p for p in images.rglob("*")
+                 if p.is_file() and p.suffix.upper() in SUPPORTED_EXTS]
 
-    files = [p for p in images.rglob("*")
-             if p.is_file() and p.suffix.upper() in SUPPORTED_EXTS]
+    # 无图片时：以标签文件为驱动，仅重命名标签
     if not files:
-        raise SystemExit("图片文件夹中没有找到图片。")
+        labels_only = Path(args.labels).expanduser() if args.labels else None
+        if labels_only is None or not labels_only.is_dir():
+            raise SystemExit("图片文件夹中没有找到图片，且未提供有效的标签目录（--labels）。")
+        label_files = [p for p in labels_only.rglob("*")
+                       if p.is_file() and p.suffix.upper() in LABEL_EXTS]
+        if args.sort == "mtime":
+            label_files.sort(key=lambda p: p.stat().st_mtime)
+        else:
+            label_files.sort(key=lambda p: _natural_key(p.name))
+        if not label_files:
+            raise SystemExit("标签目录中没有找到标签文件。")
+        print(f"未找到图片，改为「仅重命名标签」模式，共 {len(label_files)} 个标签文件。")
+        ok = fail = 0
+        for i, src in enumerate(label_files):
+            seq = args.start + i
+            new_stem = f"{args.prefix}{seq:0{args.width}d}"
+            dst = src.with_name(new_stem + src.suffix)
+            if dst.resolve() == src.resolve():
+                ok += 1
+                continue
+            if dst.exists():
+                print(f"[跳过] 目标已存在：{dst.name}（来自 {src.name}）")
+                fail += 1
+                continue
+            shutil.move(str(src), str(dst))
+            print(f"[{i + 1}/{len(label_files)}] {src.name} -> {dst.name}")
+            ok += 1
+        print(f"\n完成: 成功重命名 {ok} 个标签，失败/跳过 {fail} 个。")
+        return
 
     if args.sort == "mtime":
         files.sort(key=lambda p: p.stat().st_mtime)
@@ -105,14 +141,18 @@ def main() -> None:
             else:
                 shutil.copy2(src, dst_img)
             if labels is not None:
-                src_txt = labels / (src.stem + ".txt")
-                if src_txt.is_file():
+                for ext_lbl in LABEL_EXTS:
+                    src_lbl = labels / (src.stem + ext_lbl.lower())
+                    if not src_lbl.is_file():
+                        src_lbl = labels / (src.stem + ext_lbl)
+                    if not src_lbl.is_file():
+                        continue
                     if inplace:
-                        shutil.move(str(src_txt), str(labels / (new_stem + ".txt")))
+                        shutil.move(str(src_lbl), str(labels / (new_stem + src_lbl.suffix)))
                     else:
                         out_labels = out.parent / "labels" if out.name == "images" else out / "labels"
                         out_labels.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(src_txt, out_labels / (new_stem + ".txt"))
+                        shutil.copy2(src_lbl, out_labels / (new_stem + src_lbl.suffix))
             print(f"[{i + 1}/{len(files)}] {src.name} -> {dst_img.name}")
             ok += 1
         except Exception as exc:  # noqa: BLE001

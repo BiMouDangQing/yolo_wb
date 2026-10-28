@@ -11,6 +11,7 @@
 同步标签：可选，自动检测 images 同级 labels 目录，把同名 .txt 同步重命名 / 复制。
 """
 
+import os
 import re
 import shutil
 from pathlib import Path
@@ -22,6 +23,11 @@ from qt_binding import QtCore, QtGui, QtWidgets, Signal
 
 SUPPORTED_EXTS = {
     ".JPG", ".JPEG", ".PNG", ".BMP", ".WEBP", ".TIF", ".TIFF",
+}
+
+# 可同步重命名的标签文件格式（与图片同名、扩展名不同）
+LABEL_EXTS = {
+    ".TXT", ".JSON", ".XML", ".YAML", ".YML", ".CSV",
 }
 
 
@@ -78,17 +84,47 @@ class RenameWorker(QtCore.QThread):
             files.sort(key=lambda p: _natural_key(p.name))
         return files
 
+    def _sorted_label_files(self, labels):
+        """收集标签目录下的标签文件（支持多种扩展名），按自然排序。"""
+        files = [p for p in labels.rglob("*")
+                 if p.is_file() and p.suffix.upper() in LABEL_EXTS]
+        if self.sort_by == "mtime":
+            files.sort(key=lambda p: p.stat().st_mtime)
+        else:
+            files.sort(key=lambda p: _natural_key(p.name))
+        return files
+
     def run(self):
         images = Path(self.images_dir).expanduser()
-        if not images.is_dir():
-            self.log.emit(f"图片文件夹不存在：{images}")
-            self.finished.emit(0, 0)
-            return
+        has_images = images.is_dir()
+        files = self._sorted_files(images) if has_images else []
 
-        files = self._sorted_files(images)
-        if not files:
-            self.log.emit("图片文件夹中没有找到图片。")
-            self.finished.emit(0, 0)
+        # 标签目录（无图片时也可用标签目录作为驱动）
+        labels = None
+        if self.sync_labels or not files:
+            if str(self.labels_dir).strip():
+                labels = Path(self.labels_dir).expanduser()
+            elif has_images:
+                labels = _find_labels_dir(images)
+            if labels is not None and not labels.is_dir():
+                self.log.emit(f"标签目录不存在：{labels}")
+                labels = None
+
+        # 无图片时：以标签文件为驱动，仅重命名标签
+        label_only = not files
+        if label_only:
+            if labels is None:
+                self.log.emit("图片文件夹中没有找到图片，且未提供有效的标签目录。")
+                self.finished.emit(0, 0)
+                return
+            label_files = self._sorted_label_files(labels)
+            if not label_files:
+                self.log.emit("标签目录中没有找到标签文件。")
+                self.finished.emit(0, 0)
+                return
+            self.log.emit(f"未找到图片，改为「仅重命名标签」模式，"
+                          f"共 {len(label_files)} 个标签文件。")
+            self._run_label_only(label_files, labels)
             return
 
         if not self.inplace:
@@ -99,20 +135,12 @@ class RenameWorker(QtCore.QThread):
                 return
             out.mkdir(parents=True, exist_ok=True)
 
-        # 标签目录
-        labels = None
-        if self.sync_labels:
-            if str(self.labels_dir).strip():
-                labels = Path(self.labels_dir).expanduser()
-            else:
-                labels = _find_labels_dir(images)
-            if labels is not None and not labels.is_dir():
-                self.log.emit(f"标签目录不存在（将不同步标签）：{labels}")
-                labels = None
-            if labels is not None:
-                self.log.emit(f"同步标签目录：{labels}")
+        if labels is not None and not labels.is_dir():
+            labels = None
+        if labels is not None:
+            self.log.emit(f"同步标签目录：{labels}")
 
-        self.log.emit(f"共 {len(files)} 张图片，起始序号 {self.start_seq}，"
+        self.log.emit(f"共 {len(files)} 张图片，起始数字 {self.start_seq}，"
                       f"补零 {self.width} 位，前缀 {self.prefix or '（无）'}，"
                       f"方式：{'原地重命名' if self.inplace else '复制到新文件夹'}。")
 
@@ -147,18 +175,22 @@ class RenameWorker(QtCore.QThread):
                     shutil.move(str(src), str(dst_img))
                 else:
                     shutil.copy2(src, dst_img)
-                # 同步标签
+                # 同步标签（支持 .txt / .json / .xml 等多种格式）
                 if labels is not None:
-                    src_txt = labels / (src.stem + ".txt")
-                    if src_txt.is_file():
+                    for ext_lbl in LABEL_EXTS:
+                        src_lbl = labels / (src.stem + ext_lbl.lower())
+                        if not src_lbl.is_file():
+                            src_lbl = labels / (src.stem + ext_lbl)
+                        if not src_lbl.is_file():
+                            continue
                         if self.inplace:
-                            dst_txt = labels / (new_stem + ".txt")
-                            shutil.move(str(src_txt), str(dst_txt))
+                            dst_lbl = labels / (new_stem + src_lbl.suffix)
+                            shutil.move(str(src_lbl), str(dst_lbl))
                         else:
                             out_labels = out.parent / "labels" \
                                 if out.name == "images" else out / "labels"
                             out_labels.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(src_txt, out_labels / (new_stem + ".txt"))
+                            shutil.copy2(src_lbl, out_labels / (new_stem + src_lbl.suffix))
                 self.log.emit(f"[{i + 1}/{total}] {src.name} -> {dst_img.name}")
                 ok += 1
             except Exception as exc:  # noqa: BLE001
@@ -166,6 +198,37 @@ class RenameWorker(QtCore.QThread):
                 self.log.emit(f"[失败] {src.name}：{exc}")
 
         self.log.emit(f"\n完成：成功重命名 {ok} 张，失败/跳过 {fail} 张。")
+        self.finished.emit(ok, fail)
+
+    def _run_label_only(self, label_files, labels):
+        """仅重命名标签（无图片时）：原地重命名标签文件。"""
+        self.log.emit(f"起始数字 {self.start_seq}，补零 {self.width} 位，"
+                      f"前缀 {self.prefix or '（无）'}，原地重命名标签。")
+        ok = 0
+        fail = 0
+        total = len(label_files)
+        for i, src in enumerate(label_files):
+            self.progress.emit(i + 1, total)
+            seq = self.start_seq + i
+            new_stem = self._new_name(seq)
+            dst = src.with_name(new_stem + src.suffix)
+
+            if dst.resolve() == src.resolve():
+                ok += 1
+                continue
+            if dst.exists():
+                fail += 1
+                self.log.emit(f"[跳过] 目标已存在：{dst.name}（来自 {src.name}）")
+                continue
+            try:
+                shutil.move(str(src), str(dst))
+                self.log.emit(f"[{i + 1}/{total}] {src.name} -> {dst.name}")
+                ok += 1
+            except Exception as exc:  # noqa: BLE001
+                fail += 1
+                self.log.emit(f"[失败] {src.name}：{exc}")
+
+        self.log.emit(f"\n完成：成功重命名 {ok} 个标签，失败/跳过 {fail} 个。")
         self.finished.emit(ok, fail)
 
 
@@ -183,7 +246,8 @@ class RenameModule(QtWidgets.QWidget):
 
         hint = QtWidgets.QLabel(
             "把图片按序号从指定起点开始连续命名，例如前缀 img_、起始 1、位数 4 → img_0001.jpg。\n"
-            "可同步重命名同名 YOLO 标签（.txt），保证图片与标签配对不丢失。"
+            "可同步重命名同名标签（.txt / .json / .xml / .yaml / .csv），保证图片与标签配对不丢失。\n"
+            "若图片目录为空/不存在，会自动切换为「仅重命名标签」模式（原地重命名标签目录下的文件）。"
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -241,8 +305,9 @@ class RenameModule(QtWidgets.QWidget):
         param_row.addSpacing(12)
         param_row.addWidget(QtWidgets.QLabel("补零位数:"))
         self.width_spin = QtWidgets.QSpinBox()
-        self.width_spin.setRange(1, 8)
+        self.width_spin.setRange(0, 8)
         self.width_spin.setValue(4)
+        self.width_spin.setToolTip("0 = 纯数字（如 801）；4 = 补零（如 0801）")
         param_row.addWidget(self.width_spin)
         param_row.addSpacing(12)
         param_row.addWidget(QtWidgets.QLabel("前缀:"))
@@ -261,7 +326,7 @@ class RenameModule(QtWidgets.QWidget):
         self.sort_combo.addItem("文件名（自然排序）", "name")
         opt_row.addWidget(self.sort_combo)
         opt_row.addSpacing(16)
-        self.sync_check = QtWidgets.QCheckBox("同步重命名同名标签（.txt）")
+        self.sync_check = QtWidgets.QCheckBox("同步重命名同名标签（.txt/.json/.xml 等）")
         self.sync_check.setChecked(True)
         opt_row.addWidget(self.sync_check)
         opt_row.addStretch()
@@ -348,13 +413,18 @@ class RenameModule(QtWidgets.QWidget):
 
     def _start(self):
         images_dir = self.images_edit.text().strip()
-        if not images_dir:
-            QtWidgets.QMessageBox.warning(self, "提示", "请选择图片文件夹。")
-            return
+        labels_dir = self.labels_edit.text().strip()
 
         inplace = self.mode_combo.currentIndex() == 1
         output_dir = self.out_edit.text().strip()
-        if not inplace and not output_dir:
+
+        # 图片目录与标签目录至少要有一个
+        if not images_dir and not labels_dir:
+            QtWidgets.QMessageBox.warning(self, "提示", "请选择图片文件夹或标签目录。")
+            return
+        # 图片目录存在才要求复制模式下的输出目录
+        has_images = bool(images_dir) and os.path.isdir(images_dir)
+        if has_images and not inplace and not output_dir:
             QtWidgets.QMessageBox.warning(self, "提示", "复制模式下请选择输出目录。")
             return
 
@@ -366,7 +436,7 @@ class RenameModule(QtWidgets.QWidget):
 
         self._worker = RenameWorker(
             images_dir=images_dir,
-            labels_dir=self.labels_edit.text().strip(),
+            labels_dir=labels_dir,
             output_dir=output_dir,
             inplace=inplace,
             start_seq=self.start_spin.value(),
