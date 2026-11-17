@@ -194,8 +194,10 @@ python tools/extract_images.py -i ./A -o ./out --keep-structure --conflict prefi
 ## 📖 文档
 
 - [QT 前端使用说明](md/QT前端使用说明.md)：各标签页详细用法
+- [图片提取](md/图片提取.md)：多层嵌套文件夹提取图片的详细用法
 - [YOLO 训练图片预处理流程](md/YOLO训练图片预处理流程.md)：训练前预处理思路
 - [项目结构说明](md/项目结构说明.md)：代码组织与新增功能约定
+- [改动日志](md/CHANGELOG.md)：按时间倒序记录每次改动
 
 ---
 
