@@ -20,6 +20,7 @@ from modules.augment import AugmentModule
 from modules.background import BackgroundModule
 from modules.converter import ConverterModule
 from modules.dedup import DedupModule
+from modules.extract import ExtractModule
 from modules.label_check import LabelCheckModule
 from modules.label_merge import LabelMergeModule
 from modules.label_remap import LabelRemapModule
@@ -229,6 +230,7 @@ MODULES = [
     LabelMergeModule,
     ResizeModule,
     VisualizeModule,
+    ExtractModule,
 ]
 
 

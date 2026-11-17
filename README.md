@@ -33,6 +33,7 @@
 | 19 | 类别合并 | 把类别 C 合并到 B（改框 id、删 C 行、后续 id 自动前移重排） |
 | 20 | 图片缩放 | 把图片缩放到指定尺寸（最长边），生成新数据集并保留 polygon 标签 |
 | 21 | 标签可视化 | 把 YOLO 标签（检测框/分割多边形）绘制到图片上，方便肉眼检查 |
+| 22 | 图片提取 | 把多层嵌套文件夹里的图片（可含标签）提取到目标文件夹，支持扁平/保留结构、同名冲突处理 |
 
 所有支持预览的模块都提供「原图 / 结果」翻页预览；所有批量处理功能页均提供进度条，并会记住上次填写的路径与参数。
 
@@ -99,9 +100,10 @@ yolo_data/
 │       ├── label_unify.py  # 标签统一（全部类别改成一类）
 │       ├── label_remap.py  # 标签映射（类别 A → 类别 B）
 │       ├── label_rename.py # 类别重命名（类别名称 A → B）
+│       ├── label_merge.py  # 类别合并（类别 C 合并到 B，id 自动重排）
 │       ├── resize.py       # 图片缩放（缩放到指定尺寸，保留标签）
-│       └── visualize.py    # 标签可视化（把标签画到图片上重排）
-│       └── resize.py       # 图片缩放（缩放到指定尺寸，保留标签）
+│       ├── visualize.py    # 标签可视化（把标签画到图片上重排）
+│       └── extract.py      # 图片提取（多层嵌套文件夹提取图片到目标文件夹）
 ├── config/                 # 配置包：各模块配置读写 + 历史记忆
 │   ├── __init__.py         # load / save / history
 │   ├── config.json         # 各模块「当前」配置（本地路径，不入库）
@@ -124,9 +126,10 @@ yolo_data/
 │   ├── label_unify.py      # 标签统一（全部类别改成一类）
 │   ├── label_rename.py     # 类别重命名（类别名称 A → B）
 │   ├── label_remap.py      # 标签映射（类别 A → 类别 B）
+│   ├── label_merge.py      # 类别合并（类别 C 合并到 B，id 自动重排）
 │   ├── resize_dataset.py   # 图片缩放（缩放到指定尺寸，保留标签）
-│   └── visualize.py        # 标签可视化（把标签画到图片上重排）
-│   └── resize_dataset.py   # 图片缩放（缩放到指定尺寸，保留标签）
+│   ├── visualize.py        # 标签可视化（把标签画到图片上重排）
+│   └── extract_images.py   # 图片提取（多层嵌套文件夹提取图片到目标文件夹）
 └── md/                     # 使用与结构文档
     ├── QT前端使用说明.md
     ├── YOLO训练图片预处理流程.md
@@ -160,6 +163,8 @@ python tools/label_rename.py -i ./labels --src 0-apple --dst apple
 python tools/label_merge.py -i ./labels --src 1-LightBruise --dst apple
 python tools/visualize.py -i ./dataset/images -l ./dataset/labels -o ./vis
 python tools/resize_dataset.py -i ./dataset/images -o ./dataset_1280 -s 1280
+python tools/extract_images.py -i ./A -o ./out --with-labels
+python tools/extract_images.py -i ./A -o ./out --keep-structure --conflict prefix
 ```
 
 ---
@@ -168,6 +173,7 @@ python tools/resize_dataset.py -i ./dataset/images -o ./dataset_1280 -s 1280
 
 ```
 格式统一（图片转换）
+  → 图片提取（分散的多层文件夹收集到一起）
   → 标注转换（XML → YOLO txt）
   → 标注质检（格式 / 几何硬伤检测）
   → 漏标检测（模型反查疑似漏标）
